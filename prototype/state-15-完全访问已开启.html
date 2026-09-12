@@ -1,0 +1,416 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>OpsPilot 原型</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{--bg:#111318;--panel:#181B22;--panel2:#1D2129;--input:#20242C;--border:#303641;--border2:#3A4150;
+--text:#E6EAF0;--text2:#969EAD;--text3:#6B7280;--ok:#3FB950;--warn:#D29922;--err:#F85149;--accent:#388BFD;
+--accent-soft:rgba(56,139,253,.14);--ok-soft:rgba(63,185,80,.13);--warn-soft:rgba(210,153,34,.13);--err-soft:rgba(248,81,73,.13);
+font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+font-size:13px;line-height:1.55;color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased;overflow-x:hidden;overflow-y:auto}
+body.light{--bg:#F7F8FA;--panel:#FFFFFF;--panel2:#F1F3F7;--input:#FFFFFF;--border:#E3E7EE;--border2:#D3D9E3;
+--text:#1A1D23;--text2:#5C6472;--text3:#8A92A0;--ok:#1A7F37;--warn:#9A6700;--err:#CF222E;--accent:#0969DA;
+--accent-soft:rgba(9,105,218,.10);--ok-soft:rgba(26,127,55,.10);--warn-soft:rgba(154,103,0,.11);--err-soft:rgba(207,34,46,.10)}
+.app{height:100vh;min-height:600px;display:flex;flex-direction:column;overflow:hidden}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:12px}
+svg{flex:none}
+/* ---------- topbar ---------- */
+.topbar{height:56px;flex:none;display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--border)}
+.logo{width:24px;height:24px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:12px}
+.ws{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13.5px}
+.caret{color:var(--text3)}
+.tdiv{width:1px;height:22px;background:var(--border);margin:0 4px}
+.taskname{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);min-width:0}
+.taskname b{color:var(--text);font-weight:600}
+.pill{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:999px;font-size:11.5px;font-weight:600}
+.pill.run{background:var(--accent-soft);color:var(--accent)}
+.pill.wait{background:var(--warn-soft);color:var(--warn)}
+.pill.done{background:var(--ok-soft);color:var(--ok)}
+.pill.fail{background:var(--err-soft);color:var(--err)}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.spacer{flex:1}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:7px;background:var(--panel2);border:1px solid var(--border);font-size:12px;color:var(--text2)}
+.seg{display:flex;height:28px;border-radius:7px;background:var(--panel2);border:1px solid var(--border);overflow:hidden}
+.seg span{display:flex;align-items:center;padding:0 10px;font-size:12px;color:var(--text3)}
+.seg span.on{background:var(--accent);color:#fff;font-weight:600}
+.iconbtn{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text2)}
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--panel2);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text2)}
+/* ---------- layout ---------- */
+.main{flex:1;display:flex;min-height:0}
+.sidebar{width:260px;flex:none;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.center{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+.rail{width:320px;flex:none;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.rail.mini{width:44px;align-items:center;padding-top:8px;gap:4px}
+.rail.mini .mt{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text3)}
+.rail.mini .mt.on{background:var(--accent-soft);color:var(--accent)}
+.rail.mini .expand{margin-top:auto;margin-bottom:10px;width:32px;height:32px;border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text2)}
+/* ---------- sidebar ---------- */
+.search{margin:10px 10px 8px;height:30px;border-radius:7px;background:var(--input);border:1px solid var(--border);display:flex;align-items:center;gap:7px;padding:0 9px;color:var(--text3);font-size:12px}
+.search kbd{margin-left:auto;font-size:10px;border:1px solid var(--border2);border-radius:4px;padding:0 4px;color:var(--text3)}
+.nav{padding:0 6px 6px;flex:1;overflow:hidden}
+.navitem{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:6px;color:var(--text2);font-size:12.5px}
+.navitem.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.navitem .cnt{margin-left:auto;font-size:11px;color:var(--text3)}
+.res{display:flex;align-items:center;gap:7px;height:30px;padding:0 9px 0 14px;border-left:2px solid transparent;color:var(--text2);font-size:12.5px}
+.res .nm{color:var(--text)}
+.res.on{background:var(--panel2);border-left-color:var(--accent)}
+.res .tag{margin-left:auto;font-size:10px;padding:1px 5px;border-radius:4px;background:var(--panel2);border:1px solid var(--border);color:var(--text3)}
+.res .sub{display:flex;flex-direction:column;line-height:1.25;min-width:0}
+.res .sub small{font-size:10.5px;color:var(--text3)}
+.leaf{display:flex;align-items:center;gap:6px;height:25px;padding-left:34px;font-size:12px;color:var(--text2);border-left:2px solid transparent}
+.leaf.l2{padding-left:48px;font-size:11.5px}
+.leaf.on{background:var(--panel2);border-left-color:var(--accent);color:var(--text)}
+.leaf .sp{margin-left:auto;color:var(--text3);font-size:10.5px;padding-right:8px}
+.sidefoot{flex:none;border-top:1px solid var(--border);padding:8px 10px;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.btn{display:flex;align-items:center;justify-content:center;gap:5px;height:30px;border-radius:7px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);font-size:12px}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+/* ---------- center ---------- */
+.ctx{flex:none;height:40px;display:flex;align-items:center;gap:14px;padding:0 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);background:var(--panel)}
+.ctx b{color:var(--text);font-weight:600}
+.ctx .st{display:flex;align-items:center;gap:5px;color:var(--ok)}
+.stream{flex:1;overflow-y:auto;overflow-x:hidden;padding:13px 22px;display:flex;flex-direction:column;gap:11px;width:100%;max-width:1040px;align-self:center;margin-left:auto;margin-right:auto}
+.msg{display:flex;gap:10px}
+.msg .who{width:24px;height:24px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700}
+.msg.user{justify-content:flex-end}
+.msg.user .who{display:none}
+.msg.user .bubble{background:var(--accent);color:#fff;padding:9px 13px;border-radius:10px;max-width:70%}
+.msg.ai .who{background:var(--panel2);border:1px solid var(--border2);color:var(--accent)}
+.msg .txt{max-width:78%;padding-top:2px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:9px;overflow:hidden;max-width:100%}
+.card .hd{display:flex;align-items:center;gap:8px;padding:8px 11px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);background:var(--panel2)}
+.card .hd .ttl{color:var(--text);font-weight:600;font-size:12.5px}
+.card.fail{border-color:var(--err)}
+.card.fail .hd{background:var(--err-soft);color:var(--err)}
+.card.ok{border-color:var(--ok)}
+.toolhd{display:flex;align-items:center;gap:9px;padding:9px 11px}
+.toolhd .nm{font-weight:600;font-size:12.5px}
+.toolhd .desc{color:var(--text3);font-size:11.5px}
+.toolhd .stat{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11.5px}
+.s-ok{color:var(--ok)}.s-run{color:var(--accent)}.s-warn{color:var(--warn)}.s-err{color:var(--err)}.s-dim{color:var(--text3)}
+.kv{display:grid;grid-template-columns:88px 1fr;gap:5px 12px;font-size:12px}
+.kv dt{color:var(--text3)}
+.kv dd{color:var(--text);word-break:break-all}
+.term{background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--text2);white-space:pre-wrap;line-height:1.6}
+.term .g{color:var(--ok)}.term .r{color:var(--err)}.term .y{color:var(--warn)}.term .m{color:var(--text)}
+.badge{display:inline-flex;align-items:center;gap:4px;height:19px;padding:0 7px;border-radius:5px;font-size:10.5px;font-weight:600}
+.badge.l{background:var(--ok-soft);color:var(--ok)}
+.badge.m{background:var(--warn-soft);color:var(--warn)}
+.badge.h{background:var(--err-soft);color:var(--err)}
+.badge.n{background:var(--panel2);color:var(--text2);border:1px solid var(--border)}
+.plan{display:flex;flex-direction:column}
+.plan .pj{display:flex;align-items:center;gap:9px;padding:4px 0;border-bottom:1px dashed var(--border);font-size:12.5px}
+.plan .pj:last-child{border-bottom:0}
+.plan .pj .st{margin-left:auto;font-size:11.5px}
+.approve{border:1px solid var(--warn);background:var(--warn-soft);border-radius:9px;padding:11px 13px}
+.approve h4{font-size:13.5px;font-weight:700;color:var(--warn);display:flex;align-items:center;gap:7px;margin-bottom:8px}
+.approve .grid{display:grid;grid-template-columns:78px 1fr;gap:4px 12px;font-size:12px}
+.approve .grid dt{color:var(--text3)}
+.approve .acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.summary{border:1px solid var(--ok);border-radius:9px;padding:13px 15px;background:var(--panel)}
+.summary h4{font-size:14px;font-weight:700;color:var(--ok);display:flex;align-items:center;gap:7px;margin-bottom:11px}
+.summary .grid{display:grid;grid-template-columns:64px 1fr;gap:7px 13px;font-size:12.5px}
+.summary .grid dt{color:var(--text3)}
+.summary .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:12px 0 0}
+.summary .stats .s{border:1px solid var(--border);border-radius:7px;padding:8px 10px}
+.summary .stats .s .lb{font-size:10.5px;color:var(--text3)}
+.summary .stats .s .vl{font-size:15px;font-weight:600}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.acts .b{height:30px;padding:0 14px;border-radius:7px;border:1px solid var(--border2);background:var(--panel);color:var(--text);font-size:12px;display:flex;align-items:center;gap:6px}
+.acts .b.go{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.acts .b.no{color:var(--text2)}
+.acts .b.warn{border-color:var(--warn);color:var(--warn);background:transparent}
+.acts .b.dng{border-color:var(--err);color:var(--err);background:transparent}
+.welcome{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:0 40px}
+.welcome h2{font-size:23px;font-weight:600;letter-spacing:-.2px;margin-bottom:6px}
+.welcome p{color:var(--text2);font-size:13px;text-align:center;max-width:520px;line-height:1.75}
+.quick{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:22px;width:100%;max-width:620px}
+.quick .q{border:1px solid var(--border);background:var(--panel);border-radius:9px;padding:11px 12px;font-size:12.5px;color:var(--text2);display:flex;align-items:center;gap:8px}
+.quick .q .ic{color:var(--accent)}
+.idlehint{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--text2)}
+.idlehint .big{font-size:15px;color:var(--text);font-weight:600}
+.idlehint .sub{font-size:12.5px;color:var(--text3);text-align:center;line-height:1.8}
+/* ---------- composer ---------- */
+.composer{flex:none;padding:0 22px 16px;width:100%;max-width:1040px;align-self:center;margin-left:auto;margin-right:auto}
+.box{border:1px solid var(--border2);background:var(--input);border-radius:11px;padding:11px 13px}
+.box .ph{color:var(--text3);font-size:12.5px;padding-bottom:11px}
+.box .ops{display:flex;align-items:center;gap:6px;border-top:1px solid var(--border);padding-top:9px}
+.box .ops .o{display:flex;align-items:center;gap:5px;height:26px;padding:0 9px;border-radius:6px;font-size:11.5px;color:var(--text2);border:1px solid var(--border)}
+.box .ops .send{margin-left:auto;width:30px;height:30px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff}
+.perm{display:flex;align-items:center;gap:7px;justify-content:flex-end;margin-top:8px;font-size:11.5px;color:var(--text3)}
+.perm .ro{border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--text2)}
+/* ---------- right rail ---------- */
+.tabs{flex:none;height:42px;display:flex;align-items:stretch;border-bottom:1px solid var(--border);padding:0 6px}
+.tabs .t{display:flex;align-items:center;padding:0 13px;font-size:12.5px;color:var(--text3);border-bottom:2px solid transparent}
+.tabs .t.on{color:var(--text);border-bottom-color:var(--accent);font-weight:600}
+.railin{flex:1;overflow-y:auto;overflow-x:hidden;padding:12px 13px;display:flex;flex-direction:column;gap:11px}
+.sec{background:var(--panel2);border:1px solid var(--border);border-radius:9px;padding:11px 12px}
+.sec .sh{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text3);letter-spacing:.4px;margin-bottom:9px}
+.sec .sh .r{margin-left:auto}
+.host{display:flex;align-items:flex-start;gap:9px}
+.host .nm{font-size:13.5px;font-weight:600}
+.host .meta{font-size:11px;color:var(--text3);display:flex;gap:7px;margin-top:2px}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.metric .lb{font-size:11px;color:var(--text3);display:flex;justify-content:space-between}
+.metric .vl{font-size:17px;font-weight:600;margin:1px 0 5px}
+.bar{height:4px;border-radius:2px;background:var(--border);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:2px}
+.row{display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0}
+.row .r{margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11.5px}
+.empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;color:var(--text3);font-size:12px;text-align:center;padding:0 20px;min-width:0}
+.empty>div{max-width:100%;word-break:break-word}
+.tl{border-left:1px solid var(--border);margin-left:5px;padding-left:12px;display:flex;flex-direction:column;gap:10px}
+.tl .n{position:relative;font-size:12px}
+.tl .n::before{content:"";position:absolute;left:-17px;top:5px;width:7px;height:7px;border-radius:50%;background:var(--border2)}
+.tl .n.ok::before{background:var(--ok)}
+.tl .n.now::before{background:var(--accent)}
+.tl .n.bad::before{background:var(--err)}
+.tl .n small{display:block;color:var(--text3);font-size:10.5px}
+.logline{font-size:11.5px;color:var(--text2);display:flex;gap:8px;padding:3px 0}
+.logline .ts{color:var(--text3);flex:none}
+/* ---------- 主题切换按钮 ---------- */
+.themebtn{cursor:default}
+.themebtn .i-moon{display:none}
+body.light .themebtn .i-sun{display:none}
+body.light .themebtn .i-moon{display:inline-flex}
+/* ---------- 折叠态条（手动收起 / 窄窗口自动收起） ---------- */
+.railmini{width:44px;flex:none;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding-top:8px;gap:4px}
+.railmini .mt{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text3)}
+.railmini .mt.on{background:var(--accent-soft);color:var(--accent)}
+.railmini .expand{margin-top:auto;margin-bottom:10px;width:32px;height:32px;border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text2)}
+.sidemini{width:48px;flex:none;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding-top:10px;gap:6px}
+.sidemini .mi{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text3)}
+.sidemini .mi.on{background:var(--accent-soft);color:var(--accent)}
+.railmini.auto{display:none}
+.sidemini.auto{display:none}
+/* ---------- 响应式：按窗口比例自动伸缩，保证布局完整 ---------- */
+@media (max-width:1439px){.sidebar{width:236px}.rail{width:288px}}
+@media (max-width:1279px){
+  .railmini.auto{display:flex}
+  .rail.auto-hide{display:none}
+  .sidebar{width:220px}
+}
+@media (max-width:1023px){
+  .sidebar{width:200px}
+  .stream{padding:12px 16px}
+  .composer{padding:0 16px 13px}
+}
+@media (max-width:959px){
+  .sidemini.auto{display:flex}
+  .sidebar.auto-hide{display:none}
+}
+@media (min-width:1700px){.stream{max-width:1120px}.composer{max-width:1120px}}
+@media (max-height:840px){.stream{padding:11px 18px;gap:10px}}
+@media (max-height:720px){
+  .topbar{height:50px}
+  .ctx{height:36px}
+  .stream{padding:9px 16px;gap:8px}
+  .composer{padding:0 16px 11px}
+  .railin{padding:9px 11px;gap:8px}
+  .sec{padding:9px 10px}
+  .welcome h2{font-size:20px}
+  .quick{margin-top:14px}
+}
+/* ---------- 桌面菜单栏（标题栏样式） ---------- */
+.menubar{height:30px;flex:none;display:flex;align-items:center;gap:2px;padding:0 6px 0 10px;background:var(--panel2);border-bottom:1px solid var(--border);position:relative;z-index:20}
+.mb-brand{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--text2);padding-right:10px;margin-right:6px;border-right:1px solid var(--border)}
+.mb-brand .bg{width:15px;height:15px;border-radius:4px;background:var(--accent);color:#fff;font-size:8px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.mb-item{position:relative;height:22px;padding:0 9px;border-radius:5px;display:flex;align-items:center;font-size:12px;color:var(--text2)}
+.mb-item.open{background:var(--accent);color:#fff;font-weight:600}
+.mb-win{margin-left:auto;display:flex;gap:2px}
+.mb-win i{width:30px;height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center;color:var(--text3)}
+.menu{position:absolute;top:24px;left:0;min-width:248px;background:var(--panel);border:1px solid var(--border2);border-radius:9px;padding:5px;box-shadow:0 12px 34px rgba(0,0,0,.5);z-index:40}
+.menu .mi{display:flex;align-items:center;gap:10px;height:26px;padding:0 10px;border-radius:6px;font-size:12.5px;color:var(--text2)}
+.menu .mi .k{margin-left:auto;font-size:11px;color:var(--text3)}
+.menu .mi.hl{background:var(--accent-soft);color:var(--accent)}
+.menu .mi.dim{color:var(--text3)}
+.menu .msep{height:1px;background:var(--border);margin:5px 7px}
+/* ---------- 侧栏分组标签 ---------- */
+.grplabel{padding:9px 10px 3px;font-size:10px;letter-spacing:.6px;color:var(--text3);font-weight:600}
+/* ---------- 输入框内联控件（模型 / 思考等级 / 模式 / 发送） ---------- */
+.ctrls{display:flex;align-items:center;gap:6px;margin-top:8px;padding-top:9px;border-top:1px solid var(--border)}
+.mini{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;border-radius:7px;background:var(--panel2);border:1px solid var(--border);font-size:11.5px;color:var(--text2);white-space:nowrap}
+.mini .v{color:var(--text);font-weight:600}
+.mini.seg2{display:flex;padding:0;overflow:hidden}
+.mini.seg2 span{display:flex;align-items:center;padding:0 8px;font-size:11.5px;color:var(--text3)}
+.mini.seg2 span.on{background:var(--accent);color:#fff;font-weight:600}
+.sendbtn{margin-left:auto;width:30px;height:30px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
+/* ---------- 权限档位 ---------- */
+.pillperm{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;border-radius:7px;font-size:11.5px;font-weight:600;white-space:nowrap;border:1px solid transparent}
+.pillperm.p1{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}
+.pillperm.p2{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+.pillperm.p3{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+.banner{display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:7px 11px;border-radius:8px;border:1px solid var(--warn);background:var(--warn-soft);color:var(--warn);font-size:12px;font-weight:600}
+.banner .t{margin-left:auto;font-weight:400;color:var(--text2)}
+/* ---------- 升级确认面板 ---------- */
+.overlay{position:fixed;left:0;right:0;top:0;bottom:0;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal{width:566px;background:var(--panel);border:1px solid var(--border2);border-radius:12px;box-shadow:0 24px 64px rgba(0,0,0,.6);overflow:hidden}
+.modal .mh{display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;color:var(--warn)}
+.modal .mh .x{margin-left:auto;color:var(--text3);display:flex}
+.modal .mb{padding:16px}
+.modal .lead{font-size:12.5px;color:var(--text2);margin-bottom:13px;line-height:1.7}
+.blk{border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-bottom:11px;background:var(--panel2)}
+.blk.dng{border-color:var(--err);background:var(--err-soft)}
+.blk .bl{font-size:11px;color:var(--text3);letter-spacing:.4px;margin-bottom:7px}
+.envbox{display:flex;align-items:center;gap:10px;border:1px solid var(--err);background:var(--err-soft);border-radius:9px;padding:10px 12px;margin-bottom:11px}
+.envbox .nm{font-size:13.5px;font-weight:600}
+.envbox .sub{font-size:11px;color:var(--text3);margin-top:2px}
+.envbox .tg{margin-left:auto;font-size:11.5px;font-weight:600;color:var(--err);white-space:nowrap}
+.li{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);padding:3px 0}
+.li .lv{margin-left:auto;font-size:11px;color:var(--text3)}
+.inp .lb{font-size:11.5px;color:var(--text3);margin-bottom:6px}
+.inp .fld{height:34px;border:1px solid var(--border2);border-radius:8px;background:var(--input);display:flex;align-items:center;padding:0 11px;font-size:12.5px;color:var(--text3)}
+.inp{margin-bottom:11px}
+.check{display:flex;align-items:flex-start;gap:9px;font-size:12.5px;color:var(--text);padding:11px 12px;border:1px solid var(--border2);border-radius:9px;background:var(--panel2);margin-bottom:11px;line-height:1.6}
+.check .bx{width:15px;height:15px;border-radius:4px;border:1px solid var(--border2);flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center}
+.check .bx.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.tip{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text3);padding:2px 0}
+.mf{display:flex;gap:9px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--border);background:var(--panel2)}
+.mf .b{height:32px;padding:0 16px;border-radius:8px;border:1px solid var(--border2);background:var(--panel);color:var(--text);font-size:12.5px;display:flex;align-items:center}
+.mf .b.dng{background:var(--err);border-color:var(--err);color:#fff;font-weight:600}
+.mf .b.dng.dim{opacity:.45}
+</style></head>
+<body><div class="app">
+<div class="menubar">
+  <div class="mb-brand"><span class="bg">OP</span>OpsPilot</div>
+  <div class="mb-item">文件</div><div class="mb-item">编辑</div><div class="mb-item">视图</div><div class="mb-item">设置</div><div class="mb-item">帮助</div>
+  <div class="mb-win"><i><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg></i><i><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3.5 11.5h9" stroke-linecap="round"/></svg></i><i><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" stroke-linecap="round"/></svg></i></div>
+</div><header class="topbar">
+  <div class="ws">个人工作区 <span class="caret">▾</span></div>
+  <div class="tdiv"></div>
+  <div class="taskname"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.5"/><path d="M8 5.1V8.3l2 1.4"/></svg><b>分析 CPU 高负载原因</b><span class="pill run"><i class="dot"></i>进行中</span></div>
+  <div class="spacer"></div>
+  <div class="iconbtn themebtn" id="themeBtn" title="切换深色 / 浅色">
+    <span class="i-sun"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="3.1"/><path d="M8 1.4v1.7M8 12.9v1.7M1.4 8h1.7M12.9 8h1.7M3.35 3.35l1.2 1.2M11.45 11.45l1.2 1.2M12.65 3.35l-1.2 1.2M4.55 11.45l-1.2 1.2" stroke-linecap="round"/></svg></span><span class="i-moon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M13.5 9.9A5.9 5.9 0 016.1 2.5a5.9 5.9 0 107.4 7.4z"/></svg></span>
+  </div>
+  
+  <div class="iconbtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 8a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div>
+  <div class="avatar">MY</div>
+</header>
+<div class="main">
+<aside class="sidebar auto-hide">
+  <div class="search"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4L13.6 13.6" stroke-linecap="round"/></svg><span>搜索服务器、数据库、项目…</span><kbd>Ctrl K</kbd></div>
+  <nav class="nav">
+    <div class="grplabel">资源</div>
+    <div class="navitem on"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="4.6" rx="1"/><rect x="2" y="8.9" width="12" height="4.6" rx="1"/><path d="M4.6 4.8h.01M4.6 11.2h.01" stroke-linecap="round"/></svg>服务器<span class="cnt">4</span></div>
+    <div class="res on"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="4.6" rx="1"/><rect x="2" y="8.9" width="12" height="4.6" rx="1"/><path d="M4.6 4.8h.01M4.6 11.2h.01" stroke-linecap="round"/></svg>
+    <div class="sub"><span class="nm">HK-Ubuntu</span><small>192.168.1.10</small></div>
+    <span class="tag" style="color:var(--err)">生产</span></div><div class="res "><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="4.6" rx="1"/><rect x="2" y="8.9" width="12" height="4.6" rx="1"/><path d="M4.6 4.8h.01M4.6 11.2h.01" stroke-linecap="round"/></svg>
+    <div class="sub"><span class="nm">Rocky-K8s-Master</span><small>192.168.1.153</small></div>
+    <span class="tag" style="color:var(--err)">生产</span></div><div class="res "><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="4.6" rx="1"/><rect x="2" y="8.9" width="12" height="4.6" rx="1"/><path d="M4.6 4.8h.01M4.6 11.2h.01" stroke-linecap="round"/></svg>
+    <div class="sub"><span class="nm">Rocky-K8s-Node01</span><small>192.168.1.154</small></div>
+    <span class="tag" style="color:var(--err)">生产</span></div><div class="res "><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="4.6" rx="1"/><rect x="2" y="8.9" width="12" height="4.6" rx="1"/><path d="M4.6 4.8h.01M4.6 11.2h.01" stroke-linecap="round"/></svg>
+    <div class="sub"><span class="nm">Deploy-Server</span><small>192.168.1.169</small></div>
+    <span class="tag" style="color:var(--warn)">测试</span></div>
+    <div class="navitem"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><ellipse cx="8" cy="4" rx="5.4" ry="2.1"/><path d="M2.6 4v8c0 1.16 2.42 2.1 5.4 2.1s5.4-.94 5.4-2.1V4"/></svg>数据库<span class="cnt">3</span></div>
+    <div class="res "><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="4.6" rx="1"/><rect x="2" y="8.9" width="12" height="4.6" rx="1"/><path d="M4.6 4.8h.01M4.6 11.2h.01" stroke-linecap="round"/></svg>
+    <div class="sub"><span class="nm">MySQL-Production</span><small>192.168.1.20</small></div>
+    <span class="tag" style="color:var(--err)">生产</span></div><div class="res "><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="4.6" rx="1"/><rect x="2" y="8.9" width="12" height="4.6" rx="1"/><path d="M4.6 4.8h.01M4.6 11.2h.01" stroke-linecap="round"/></svg>
+    <div class="sub"><span class="nm">MySQL-Test</span><small>192.168.1.21</small></div>
+    <span class="tag" style="color:var(--warn)">测试</span></div><div class="res "><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="4.6" rx="1"/><rect x="2" y="8.9" width="12" height="4.6" rx="1"/><path d="M4.6 4.8h.01M4.6 11.2h.01" stroke-linecap="round"/></svg>
+    <div class="sub"><span class="nm">Redis-Production</span><small>192.168.1.22</small></div>
+    <span class="tag" style="color:var(--err)">生产</span></div>
+    <div class="grplabel">工作</div>
+    <div class="navitem"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.9 3.6h4.1l1.4 1.8h6.7v6.9H1.9z"/></svg>项目<span class="cnt">3</span></div>
+    <div class="res "><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.9 3.6h4.1l1.4 1.8h6.7v6.9H1.9z"/></svg>
+    <div class="sub"><span class="nm">Personal Blog</span></div>
+    <span class="tag" style="color:var(--text3)">开发</span></div>
+    <div class="res "><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.9 3.6h4.1l1.4 1.8h6.7v6.9H1.9z"/></svg>
+    <div class="sub"><span class="nm">Monitoring Stack</span></div>
+    <span class="tag" style="color:var(--err)">生产</span></div>
+    <div class="navitem"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.5"/><path d="M8 5.1V8.3l2 1.4"/></svg>任务历史</div>
+    <div class="navitem"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 2.3l1.75 3.6 3.95.55-2.85 2.75.68 3.9L8 11.25 4.47 13.1l.68-3.9L2.3 6.45l3.95-.55z"/></svg>收藏</div>
+  </nav>
+  <div class="sidefoot">
+    <div class="btn pri"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.4v9.2M3.4 8h9.2" stroke-linecap="round"/></svg>新建连接</div>
+    <div class="btn"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.4v9.2M3.4 8h9.2" stroke-linecap="round"/></svg>新建项目</div>
+    <div class="btn" style="grid-column:1 / -1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 8a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>连接管理 · 凭据管理</div>
+  </div>
+</aside><aside class="sidemini auto">
+  <div class="mi on"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="4.6" rx="1"/><rect x="2" y="8.9" width="12" height="4.6" rx="1"/><path d="M4.6 4.8h.01M4.6 11.2h.01" stroke-linecap="round"/></svg></div>
+  <div class="mi"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><ellipse cx="8" cy="4" rx="5.4" ry="2.1"/><path d="M2.6 4v8c0 1.16 2.42 2.1 5.4 2.1s5.4-.94 5.4-2.1V4"/></svg></div>
+  <div class="mi"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.9 3.6h4.1l1.4 1.8h6.7v6.9H1.9z"/></svg></div>
+  <div class="mi"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.5"/><path d="M8 5.1V8.3l2 1.4"/></svg></div>
+  <div class="mi"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 2.3l1.75 3.6 3.95.55-2.85 2.75.68 3.9L8 11.25 4.47 13.1l.68-3.9L2.3 6.45l3.95-.55z"/></svg></div>
+</aside>
+<div class="center"><div class="ctx">当前上下文：<b>HK-Ubuntu</b><span>环境：<b>生产</b></span>
+  <span class="st"><i class="dot"></i>连接状态：已连接</span></div>
+<div class="stream">
+  <div class="msg user"><div class="bubble">检查这台服务器最近为什么 CPU 使用率很高</div></div>
+  <div class="msg ai"><div class="who">AI</div><div class="txt">
+    <div style="margin-bottom:9px">我会检查以下内容：</div>
+    <div class="plan">
+      <div class="pj"><span class="s-ok">✓</span>CPU 和系统负载<span class="st s-ok">已完成 · 1.2s</span></div>
+      <div class="pj"><span class="s-ok">✓</span>内存和 Swap<span class="st s-ok">已完成 · 0.9s</span></div>
+      <div class="pj"><span class="s-ok">✓</span>高占用进程<span class="st s-ok">已完成 · 1.8s</span></div>
+      <div class="pj"><span class="s-run">●</span>Docker 容器资源<span class="st s-run">执行中 · 3.2s</span></div>
+      <div class="pj"><span class="s-dim">○</span>最近系统日志<span class="st s-dim">待执行</span></div>
+    </div>
+  </div></div>
+  <div class="msg ai"><div class="who">AI</div><div class="txt"><div class="card">
+    <div class="hd"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="4.6" rx="1"/><rect x="2" y="8.9" width="12" height="4.6" rx="1"/><path d="M4.6 4.8h.01M4.6 11.2h.01" stroke-linecap="round"/></svg><span class="ttl">get_process_list</span><span>获取进程列表</span>
+      <span style="margin-left:auto" class="s-ok">✓ 已完成 · 1.8s</span><span class="badge l">L1</span></div>
+    <div class="bd" style="padding:0"><div class="term" style="border:0;border-radius:0"><span class="g">PID    USER   %CPU   %MEM   COMMAND</span>
+2143   app    <span class="r">62.1</span>   18.4   java -jar backend.jar
+ 882   root    8.6    1.2   containerd
+1174   www     4.2    2.1   nginx
+ 301   root    3.1    0.8   dockerd</div></div>
+  </div></div></div>
+  <div class="msg ai"><div class="who">AI</div><div class="txt">
+    高占用进程是 <b>java (PID 2143) 62.1%</b>，属 backend 容器。正在核对容器级资源占用。
+  </div></div>
+</div>
+<div class="composer"><div class="banner"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.8l6 2.6v4c0 3.2-2.4 5.3-6 6.4-3.6-1.1-6-3.2-6-6.4v-4z"/><path d="M8 5.4v3M8 10.6h.01" stroke-linecap="round"/></svg>完全访问已开启 · 目标 HK-Ubuntu（生产）<span class="t">29:41 后自动回落</span></div><div class="box">
+    <div class="ph">继续追问，或让 Agent 给出修复方案…</div>
+    <div class="ops">
+      <div class="o"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M3.5 1.8h6l3 3v9.4h-9z"/><path d="M9.5 1.8v3h3"/></svg>添加文件</div><div class="o"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="4.6" rx="1"/><rect x="2" y="8.9" width="12" height="4.6" rx="1"/><path d="M4.6 4.8h.01M4.6 11.2h.01" stroke-linecap="round"/></svg>选择服务器</div>
+      <div class="o"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><ellipse cx="8" cy="4" rx="5.4" ry="2.1"/><path d="M2.6 4v8c0 1.16 2.42 2.1 5.4 2.1s5.4-.94 5.4-2.1V4"/></svg>选择数据库</div><div class="o">添加上下文</div>
+      <div class="o"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2.5 3.5h11v9h-11z"/><path d="M5 7l1.6 1.5L5 10M8.4 10h3" stroke-linecap="round" stroke-linejoin="round"/></svg>使用终端</div>
+    </div>
+    <div class="ctrls">
+      <div class="pillperm p3"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.8l6 2.6v4c0 3.2-2.4 5.3-6 6.4-3.6-1.1-6-3.2-6-6.4v-4z"/><path d="M8 5.4v3M8 10.6h.01" stroke-linecap="round"/></svg>完全访问 <span class="caret">▾</span></div>
+      <div class="mini">DeepSeek-V3 <span class="caret">▾</span></div>
+      <div class="mini">思考 <span class="v">中</span> <span class="caret">▾</span></div>
+      <div class="mini seg2"><span class="on">Auto</span><span class="">Plan</span><span class="">Execute</span><span class="">Review</span></div>
+      <div class="sendbtn" style=""><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 12.6V3.4M4.2 7.2L8 3.4l3.8 3.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    </div></div><div class="perm"><span class="ro">完全访问</span><span>L0–L4 自动执行，L5 仍会拦截</span></div></div>
+</div>
+<aside class="rail auto-hide"><div class="tabs"><div class="t on">概览</div><div class="t ">工具</div><div class="t ">任务</div><div class="t ">日志</div></div><div class="railin"><div class="sec">
+  <div class="sh">服务器信息 <span class="r s-ok"><i class="dot"></i>在线</span></div>
+  <div class="host"><div><div class="nm">HK-Ubuntu</div>
+    <div class="meta"><span>Ubuntu 24.04</span><span>4 vCPU</span><span>4 GB RAM</span></div></div></div>
+</div><div class="sec">
+  <div class="sh">资源占用</div>
+  <div class="metrics">
+    <div class="metric"><div class="lb"><span>CPU</span></div><div class="vl" style="color:var(--err)">82%</div><div class="bar"><i style="width:82%;background:var(--err)"></i></div></div>
+    <div class="metric"><div class="lb"><span>内存</span></div><div class="vl" style="color:var(--err)">91%</div><div class="bar"><i style="width:91%;background:var(--err)"></i></div></div>
+    <div class="metric"><div class="lb"><span>磁盘</span></div><div class="vl" style="color:var(--warn)">68%</div><div class="bar"><i style="width:68%;background:var(--warn)"></i></div></div>
+    <div class="metric"><div class="lb"><span>系统负载</span></div><div class="vl" style="color:var(--warn)">4.8</div><div class="bar"><i style="width:74%;background:var(--warn)"></i></div></div>
+  </div>
+</div><div class="sec">
+  <div class="sh">服务状态</div>
+  <div class="row"><span>Nginx</span><span class="r s-ok"><i class="dot"></i>正常</span></div>
+  <div class="row"><span>Docker</span><span class="r s-ok"><i class="dot"></i>正常</span></div>
+  <div class="row"><span>MySQL</span><span class="r s-warn"><i class="dot"></i>警告</span></div>
+  <div class="row"><span>Redis</span><span class="r s-ok"><i class="dot"></i>正常</span></div>
+</div>
+<div class="sec">
+  <div class="sh">网络状态</div>
+  <div class="row"><span>SSH 连接</span><span class="r s-ok"><i class="dot"></i>正常</span></div>
+  <div class="row"><span>HTTP</span><span class="r s-ok"><i class="dot"></i>正常</span></div>
+  <div class="row"><span>HTTPS</span><span class="r s-ok"><i class="dot"></i>正常</span></div>
+</div></div></aside><aside class="railmini auto">
+  <div class="mt on"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="4.6" rx="1"/><rect x="2" y="8.9" width="12" height="4.6" rx="1"/><path d="M4.6 4.8h.01M4.6 11.2h.01" stroke-linecap="round"/></svg></div>
+  <div class="mt"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2.5 3.5h11v9h-11z"/><path d="M5 7l1.6 1.5L5 10M8.4 10h3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  <div class="mt"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.5"/><path d="M8 5.1V8.3l2 1.4"/></svg></div>
+  <div class="mt"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M3.5 1.8h6l3 3v9.4h-9z"/><path d="M9.5 1.8v3h3"/></svg></div>
+  <div class="expand"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+</aside>
+</div>
+</div><script>
+(function(){
+  function setLight(v){document.body.classList.toggle('light',!!v);}
+  var b=document.getElementById('themeBtn');
+  if(b){b.onclick=function(){setLight(!document.body.classList.contains('light'));};}
+  window.addEventListener('message',function(e){
+    if(e.data&&typeof e.data.__opsTheme==='boolean'){setLight(e.data.__opsTheme);}
+  });
+})();
+</script></body></html>

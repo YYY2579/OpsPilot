@@ -1,0 +1,20 @@
+# 只读参考的上游浅克隆,不入库(见 docs/决策记录-001-代码组织.md)
+upstream/
+
+# 密钥与本地状态
+key.txt
+.openhands/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Node
+node_modules/
+dist/
+build/
+
+# 系统
+.DS_Store
+Thumbs.db

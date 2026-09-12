@@ -1,0 +1,42 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>OpsPilot 原型总览</title><style>
+body{margin:0;background:#0B0D11;font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.bar{position:sticky;top:0;z-index:9;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 14px;background:#181B22;border-bottom:1px solid #303641}
+h1{font-size:13px;color:#E6EAF0;margin:0 12px 0 2px;font-weight:600;white-space:nowrap}
+.sep{width:1px;height:20px;background:#303641;margin:0 6px}
+button{height:28px;padding:0 11px;border-radius:7px;border:1px solid #303641;background:#1D2129;color:#969EAD;font-size:12px;cursor:pointer;font-family:inherit}
+button.on{background:#388BFD;border-color:#388BFD;color:#fff;font-weight:600}
+button.tg{border-color:#388BFD;color:#388BFD}
+.wrap{padding:14px;display:flex;justify-content:center}
+.frame{border:1px solid #303641;border-radius:10px;overflow:hidden;background:#111318;flex:none}
+iframe{width:100%;height:100%;border:0;display:block}
+.hint{color:#6B7280;font-size:11.5px;margin-left:auto}
+</style></head><body>
+<div class="bar">
+  <h1>OpsPilot · UI 原型（13 个状态）</h1><button data-i="0" class="s on">01 · 空白欢迎页</button><button data-i="1" class="s">02 · 已选服务器未聊天</button><button data-i="2" class="s">03 · Agent 执行中</button><button data-i="3" class="s">04 · 工具调用展开</button><button data-i="4" class="s">05 · 等待用户审批</button><button data-i="5" class="s">06 · 任务完成</button><button data-i="6" class="s">07 · 工具执行失败</button><button data-i="7" class="s">08 · 数据库树展开</button><button data-i="8" class="s">09 · 右侧面板收起</button><button data-i="9" class="s">10 · 浅色主题</button><button data-i="10" class="s">13 · 顶部菜单展开</button><button data-i="11" class="s">14 · 完全访问升级确认</button><button data-i="12" class="s">15 · 完全访问已开启</button>
+  <div class="sep"></div>
+  <button class="tg" id="tgTheme">切换 深色 / 浅色</button>
+  <div class="sep"></div>
+  <button class="sz on" data-w="1440" data-h="920">1440×920 标准</button>
+  <button class="sz" data-w="1180" data-h="820">1180×820 窄窗</button>
+  <button class="sz" data-w="1920" data-h="900">1920×900 超宽</button>
+  <span class="hint">窄窗会自动收起右侧面板，更窄再收起左侧；超宽时聊天列居中限宽</span>
+</div>
+<div class="wrap"><div class="frame" id="frame" style="width:1440px;height:920px"><iframe src="state-01-空白欢迎页.html" style="display:block"></iframe><iframe src="state-02-已选服务器未聊天.html" style="display:none"></iframe><iframe src="state-03-Agent执行中.html" style="display:none"></iframe><iframe src="state-04-工具调用展开.html" style="display:none"></iframe><iframe src="state-05-等待用户审批.html" style="display:none"></iframe><iframe src="state-06-任务完成.html" style="display:none"></iframe><iframe src="state-07-工具执行失败.html" style="display:none"></iframe><iframe src="state-08-数据库树展开.html" style="display:none"></iframe><iframe src="state-09-右侧面板收起.html" style="display:none"></iframe><iframe src="state-10-浅色主题.html" style="display:none"></iframe><iframe src="state-13-顶部菜单展开.html" style="display:none"></iframe><iframe src="state-14-完全访问升级确认.html" style="display:none"></iframe><iframe src="state-15-完全访问已开启.html" style="display:none"></iframe></div></div>
+<script>
+var bs=[].slice.call(document.querySelectorAll('button[data-i]')),
+    szs=[].slice.call(document.querySelectorAll('button.sz')),
+    fs=[].slice.call(document.querySelectorAll('iframe')),
+    fr=document.getElementById('frame');
+bs.forEach(function(b){b.onclick=function(){var i=+b.dataset.i;
+  bs.forEach(function(x){x.classList.remove('on')});b.classList.add('on');
+  fs.forEach(function(f,j){f.style.display=j===i?'block':'none'});}});
+szs.forEach(function(b){b.onclick=function(){
+  szs.forEach(function(x){x.classList.remove('on')});b.classList.add('on');
+  fr.style.width=b.dataset.w+'px';fr.style.height=b.dataset.h+'px';}});
+var light=false;
+document.getElementById('tgTheme').onclick=function(){
+  light=!light;
+  fs.forEach(function(f){try{f.contentWindow.postMessage({__opsTheme:light},'*')}catch(e){}});
+};
+</script></body></html>
