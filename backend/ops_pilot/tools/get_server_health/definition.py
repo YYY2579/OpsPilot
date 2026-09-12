@@ -25,8 +25,8 @@ from openhands.sdk.tool import (
 )
 from pydantic import Field
 
-from ops_pilot.credentials import CredentialResolver, SshCredential
-from ops_pilot.ssh.client import ParamikoCommandRunner
+from ops_pilot.credentials import CredentialError, CredentialResolver, SshCredential
+from ops_pilot.ssh.client import ParamikoCommandRunner, SshError
 from ops_pilot.tools.health import CollectionError
 from ops_pilot.tools.health import collect_health
 
@@ -96,21 +96,23 @@ class GetServerHealthExecutor(
         action: GetServerHealthAction,
         conversation: Any = None,
     ) -> GetServerHealthObservation:
-        # 凭据解析：只在本方法作用域内存在，绝不外泄
-        credential: SshCredential = self._resolver.resolve(action.server_id)
-        runner = ParamikoCommandRunner(credential, connect_timeout=self._connect_timeout)
+        runner = None
         try:
+            # 凭据解析：只在本方法作用域内存在，绝不外泄
+            credential: SshCredential = self._resolver.resolve(action.server_id)
+            runner = ParamikoCommandRunner(credential, connect_timeout=self._connect_timeout)
             snapshot = collect_health(
                 runner,
                 server_id=action.server_id,
                 key_services=self._key_services,
                 timeout=self._command_timeout,
             )
-        except (SshError, CollectionError) as exc:
+        except (SshError, CollectionError, CredentialError) as exc:
             # 明确区分：认证失败 / 网络不通 / 命令失败（规格 §A12）
             raise ValueError(f"SSH {exc.kind}: {exc.detail}") from exc
         finally:
-            runner.close()
+            if runner is not None:
+                runner.close()
         return GetServerHealthObservation(**snapshot)
 
 

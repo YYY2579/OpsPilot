@@ -14,7 +14,6 @@ openhands = pytest.importorskip(
 )
 
 from openhands.sdk.security.risk import SecurityRisk  # noqa: E402
-from openhands.sdk.tool import get_tool_module_qualnames  # noqa: E402
 from openhands.sdk.tool.registry import list_registered_tools  # noqa: E402
 
 import ops_pilot.tools.get_server_health.definition as gh_def  # noqa: E402
@@ -66,7 +65,6 @@ def test_observation_masks_secrets(tmp_path):
         services={"docker": "active", "mysql": "warning"},
         anomalies=[{"item": "cpu", "level": "warning", "hint": "load/cores=1.2"}],
     )
-    observation.model_extra = None
     registry.mask_secrets_in_model(observation)
     dumped = observation.model_dump_json()
     assert "s3cr3t-PASS" not in dumped

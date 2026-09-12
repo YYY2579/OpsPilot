@@ -30,6 +30,7 @@ class CredentialError(RuntimeError):
     def __init__(self, kind: str, detail: str) -> None:
         super().__init__(f"{kind}: {detail}")
         self.kind = kind
+        self.detail = detail   # 与 SshError/CollectionError 对齐：统一 .kind/.detail 协议
 
 
 @dataclass(frozen=True)
