@@ -1,0 +1,174 @@
+"""OpsPilot 后端 API（M2 骨架，§A10 路由）。
+
+职责边界（决策记录 001）：资源管理 / 任务 / 审批 / 审计在这里；
+Agent 与工具执行在 OpenHands agent-server —— 本服务不跑 Agent。
+"""
+from __future__ import annotations
+
+import time
+from typing import Any
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+from ops_pilot.server import db
+from ops_pilot.server.permission import (
+    DEFAULT_BY_ENV,
+    PermissionDenied,
+    PermissionStore,
+    TIERS,
+)
+
+app = FastAPI(title="OpsPilot Backend", version="0.1.0")
+store = PermissionStore()
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    app.state.conn = db.connect()
+
+
+# ---------- 连接管理（§A10.1 / §A10.2） ----------
+
+class ServerIn(BaseModel):
+    name: str
+    host: str
+    port: int = 22
+    username: str
+    auth_type: str = "ssh_key"
+    credential_ref: str
+    environment: str = "development"
+    tags: str = ""
+    description: str = ""
+
+
+@app.post("/api/connections/servers")
+def create_server(body: ServerIn):
+    return db.insert(app.state.conn, "serverconnection", body.model_dump())
+
+
+@app.get("/api/connections/servers")
+def list_servers():
+    return db.fetch_all(app.state.conn, "serverconnection")
+
+
+@app.get("/api/connections/servers/{server_id}")
+def get_server(server_id: str):
+    row = db.fetch_one(app.state.conn, "serverconnection", server_id)
+    if row is None:
+        raise HTTPException(404, "server not found")
+    return row
+
+
+# ---------- 任务（§A10.4） ----------
+
+class TaskIn(BaseModel):
+    title: str
+    user_request: str
+    context_type: str = "server"
+    context_id: str = ""
+    risk_level: str = "L1"
+    created_by: str = "mir Y"
+
+
+@app.post("/api/tasks")
+def create_task(body: TaskIn):
+    return db.insert(app.state.conn, "agenttask", body.model_dump())
+
+
+@app.get("/api/tasks")
+def list_tasks():
+    return db.fetch_all(app.state.conn, "agenttask")
+
+
+@app.get("/api/tasks/{task_id}")
+def get_task(task_id: str):
+    row = db.fetch_one(app.state.conn, "agenttask", task_id)
+    if row is None:
+        raise HTTPException(404, "task not found")
+    return row
+
+
+# ---------- 审批（§A10.5） ----------
+
+class ApprovalIn(BaseModel):
+    task_id: str
+    tool_execution_id: str = ""
+    operation_description: str
+    risk_level: str = "L3"
+    impact: str = ""
+    rollback_plan: str = ""
+
+
+@app.post("/api/approvals")
+def create_approval(body: ApprovalIn):
+    return db.insert(app.state.conn, "approvalrequest", body.model_dump())
+
+
+@app.get("/api/approvals")
+def list_approvals():
+    return db.fetch_all(app.state.conn, "approvalrequest")
+
+
+@app.post("/api/approvals/{approval_id}/approve")
+def approve(approval_id: str, approved_by: str = "mir Y"):
+    row = db.update(
+        app.state.conn,
+        "approvalrequest",
+        approval_id,
+        {"status": "approved", "approved_by": approved_by, "approved_at": db.now()},
+    )
+    if row is None:
+        raise HTTPException(404, "approval not found")
+    return row
+
+
+@app.post("/api/approvals/{approval_id}/reject")
+def reject(approval_id: str, rejected_reason: str = "User rejected the action."):
+    row = db.update(
+        app.state.conn,
+        "approvalrequest",
+        approval_id,
+        {"status": "rejected", "rejected_reason": rejected_reason},
+    )
+    if row is None:
+        raise HTTPException(404, "approval not found")
+    return row
+
+
+# ---------- 权限档位（§A6.5） ----------
+
+class PermissionIn(BaseModel):
+    environment: str
+    target: str
+    acknowledged: bool = False
+    env_confirm: str | None = None
+    actor: str = "mir Y"
+
+
+@app.get("/api/session/{session_id}/permission")
+def get_permission(session_id: str, environment: str = "production"):
+    if environment not in DEFAULT_BY_ENV:
+        raise HTTPException(422, f"未知环境：{environment}")
+    sp = store.get(session_id, environment)
+    return {"session_id": session_id, "environment": environment, "tier": sp.tier,
+            "expires_at": sp.expires_at, "tiers": list(TIERS)}
+
+
+@app.post("/api/session/{session_id}/permission")
+def change_permission(session_id: str, body: PermissionIn):
+    if body.environment not in DEFAULT_BY_ENV:
+        raise HTTPException(422, f"未知环境：{body.environment}")
+    try:
+        record = store.change(
+            session_id,
+            body.environment,
+            body.target,
+            acknowledged=body.acknowledged,
+            env_confirm=body.env_confirm,
+        )
+    except PermissionDenied as exc:
+        raise HTTPException(422, str(exc))
+    record["actor"] = body.actor
+    record["at"] = time.time()
+    return record

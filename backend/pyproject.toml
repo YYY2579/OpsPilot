@@ -1,0 +1,28 @@
+[project]
+name = "ops-pilot-tools"
+version = "0.1.0"
+description = "OpsPilot 运维工具包 —— OpenHands ToolDefinition 实现（规格 §A5.2 / §A6.4）"
+requires-python = ">=3.10"
+dependencies = [
+    "paramiko==3.5.1",
+    "fastapi==0.115.6",
+    "uvicorn==0.34.0",
+]
+
+[project.optional-dependencies]
+# SDK 胶水层（get_server_health/definition.py）需要；纯逻辑层不需要。
+# 版本与 upstream/software-agent-sdk 检出一致（1.47.0）；agent-server 实际运行版本 1.46.0，
+# 集成验证时以 agent-server 进程内的 SDK 为准（任务拆解 M1 验收项）。
+sdk = ["openhands-sdk==1.47.0"]
+dev = ["pytest==8.3.5", "httpx==0.28.1"]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["ops_pilot*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
