@@ -69,6 +69,8 @@ from openhands.sdk import (  # noqa: E402
 from pydantic import SecretStr  # noqa: E402
 
 import ops_pilot.tools.register_all as tools_reg  # noqa: E402  注册全部只读工具
+from ops_pilot.security.policy import policy_for_tier  # noqa: E402
+from ops_pilot.server.permission import TIER_REQUESTED  # noqa: E402
 from ops_pilot.credentials import assert_no_secrets  # noqa: E402
 
 logger = get_logger(__name__)
@@ -99,6 +101,11 @@ def on_event(event: Event) -> None:
 
 workspace = tempfile.mkdtemp(prefix="opspilot-m1-")
 conversation = Conversation(agent=agent, callbacks=[on_event], workspace=workspace)
+
+# 权限档位 → 确认策略（§A6.5.1；M3 接入点）
+tier = os.environ.get("OPSPILOT_TIER", TIER_REQUESTED)
+conversation.set_confirmation_policy(policy_for_tier(tier))
+print(f"权限档位：{tier} → 确认策略：{type(policy_for_tier(tier)).__name__}")
 
 # 凭据进 SecretRegistry（框架负责 env 注入与 <secret-hidden> 脱敏）
 if ssh_secrets:
