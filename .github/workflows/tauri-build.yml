@@ -4,10 +4,6 @@ on:
   workflow_dispatch:          # 手动触发（Actions 页面点按钮）
   push:
     tags: ["v*"]              # 打 tag 时自动触发
-    paths:
-      - "frontend/**"
-      - "backend/**"
-      - ".github/workflows/tauri-build.yml"
 
 permissions:
   contents: write             # 上传 release 需要
@@ -20,12 +16,20 @@ jobs:
         include:
           - platform: windows-latest
             args: ""
+            bundle-dir: release
+            artifact: opspilot-windows-x64
           - platform: macos-latest
             args: "--target aarch64-apple-darwin"
+            bundle-dir: aarch64-apple-darwin
+            artifact: opspilot-macos-arm64
           - platform: macos-latest
             args: "--target x86_64-apple-darwin"
+            bundle-dir: x86_64-apple-darwin
+            artifact: opspilot-macos-x64
           - platform: ubuntu-22.04
             args: ""
+            bundle-dir: release
+            artifact: opspilot-linux-x64
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -71,15 +75,15 @@ jobs:
           projectPath: frontend
           args: ${{ matrix.args }}
 
-      # 上传构建产物
+      # 上传构建产物（交叉编译的 bundle 在 target/<三元组>/bundle/ 下）
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: opspilot-${{ matrix.platform }}
+          name: ${{ matrix.artifact }}
           path: |
-            frontend/src-tauri/target/release/bundle/msi/*.msi
-            frontend/src-tauri/target/release/bundle/nsis/*.exe
-            frontend/src-tauri/target/release/bundle/dmg/*.dmg
-            frontend/src-tauri/target/release/bundle/deb/*.deb
-            frontend/src-tauri/target/release/bundle/appimage/*.AppImage
-          if-no-files-found: warn
+            frontend/src-tauri/target/${{ matrix.bundle-dir }}/bundle/msi/*.msi
+            frontend/src-tauri/target/${{ matrix.bundle-dir }}/bundle/nsis/*.exe
+            frontend/src-tauri/target/${{ matrix.bundle-dir }}/bundle/dmg/*.dmg
+            frontend/src-tauri/target/${{ matrix.bundle-dir }}/bundle/deb/*.deb
+            frontend/src-tauri/target/${{ matrix.bundle-dir }}/bundle/appimage/*.AppImage
+          if-no-files-found: error
