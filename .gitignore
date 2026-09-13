@@ -19,3 +19,14 @@ build/
 # 系统
 .DS_Store
 Thumbs.db
+
+# ---- 环境变量与密钥（§A6.4：密钥永不进仓库）----
+.env
+.env.*
+*.env
+.ven.txt
+secrets/
+*.pem
+*.key
+*.db
+*.sqlite3
