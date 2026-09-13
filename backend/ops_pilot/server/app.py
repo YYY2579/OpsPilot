@@ -12,6 +12,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from ops_pilot.credentials import CredentialResolver
+from ops_pilot.runtime.runner import ConversationRunner, RunnerError
+from ops_pilot.runtime.states import TaskState
 from ops_pilot.server import db
 from ops_pilot.server import audit, settings
 from ops_pilot.server.probe import test_database, test_server
@@ -179,6 +181,67 @@ def get_task(task_id: str):
     if row is None:
         raise HTTPException(404, "task not found")
     return row
+
+
+_runner: ConversationRunner | None = None
+
+
+def get_runner() -> ConversationRunner:
+    """进程内单例 runner（将来换成 agent-server 客户端时改这里）。"""
+    global _runner
+    if _runner is None:
+        _runner = ConversationRunner(app.state.conn)
+    else:
+        _runner.conn = app.state.conn
+    return _runner
+
+
+class RunTaskIn(BaseModel):
+    server_id: str
+    user_request: str | None = None
+    title: str | None = None
+    tier: str = "requested_approval"
+    environment: str = "production"
+    async_run: bool = True
+
+
+@app.post("/api/tasks/run")
+def run_task(body: RunTaskIn):
+    """创建并运行一次任务（默认后台线程执行，立即返回 task_id）。"""
+    runner = get_runner()
+    request = body.user_request or f"检查 server_id 为 {body.server_id} 的主机健康状态并给出结论"
+    payload = dict(
+        title=body.title or request[:40],
+        user_request=request,
+        server_id=body.server_id,
+        tier=body.tier,
+        environment=body.environment,
+    )
+    if body.async_run:
+        row = runner.start_task_async(**payload)
+        return {**row, "state": TaskState.RECEIVED.value, "mode": "async"}
+    row = runner.start_task(**payload)
+    result = runner.run(row["id"], **payload)
+    fresh = db.fetch_one(app.state.conn, "agenttask", row["id"]) or row
+    return {**fresh, **result, "mode": "sync"}
+
+
+@app.get("/api/tasks/{task_id}/state")
+def get_task_state(task_id: str):
+    try:
+        return get_runner().projection(task_id)
+    except RunnerError:
+        raise HTTPException(404, "task not found")
+
+
+@app.get("/api/tasks/{task_id}/events")
+def get_task_events(task_id: str, limit: int = 200):
+    return get_runner().events(task_id, limit=limit)
+
+
+@app.post("/api/tasks/{task_id}/cancel")
+def cancel_task(task_id: str):
+    return get_runner().cancel(task_id)
 
 
 # ---------- 审批（§A10.5） ----------

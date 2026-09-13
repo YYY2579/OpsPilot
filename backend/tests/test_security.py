@@ -131,15 +131,48 @@ def test_unknown_tool_defaults_to_l4():
 
 def test_policy_should_confirm_matches_matrix():
     requested = OpsPilotConfirmationPolicy(tier=TIER_REQUESTED)
-    assert requested.should_confirm(SecurityRisk.LOW) is True         # LOW→L2：请求审批下要问
+    # LOW 代表只读（L0/L1）→ 任何档位都自动，否则只读工具会被要求确认、会话卡在第一步
+    assert requested.should_confirm(SecurityRisk.LOW) is False
     assert requested.should_confirm(SecurityRisk.MEDIUM) is True      # MEDIUM→L3：询问
     assert requested.should_confirm(SecurityRisk.HIGH) is True        # HIGH→L4：二次确认
     assert requested.should_confirm(SecurityRisk.UNKNOWN) is True     # UNKNOWN 按 L4 保守
 
     approve = OpsPilotConfirmationPolicy(tier=TIER_APPROVE)
-    assert approve.should_confirm(SecurityRisk.LOW) is False          # L2 自动
+    assert approve.should_confirm(SecurityRisk.LOW) is False
     assert approve.should_confirm(SecurityRisk.MEDIUM) is False       # L3 自动
     assert approve.should_confirm(SecurityRisk.HIGH) is True          # L4 询问
+
+
+def test_analyzer_maps_tool_level_to_framework_risk():
+    """analyzer 的映射必须与 policy 的反向映射语义一致（LOW=只读）。"""
+    from ops_pilot.security.analyzer import LEVEL_TO_RISK, OpsPilotSecurityAnalyzer
+    from ops_pilot.security.levels import RiskLevel
+
+    assert LEVEL_TO_RISK[RiskLevel.L1] is SecurityRisk.LOW
+    assert LEVEL_TO_RISK[RiskLevel.L4] is SecurityRisk.HIGH
+
+    analyzer = OpsPilotSecurityAnalyzer()
+
+    class _Ev:
+        def __init__(self, tool, action=None):
+            self.tool_name = tool
+            self.action = action
+
+    class _Cmd:
+        def __init__(self, command):
+            self.command = command
+
+    # 只读工具 → LOW（自动）
+    assert analyzer.security_risk(_Ev("get_server_health")) is SecurityRisk.LOW
+    # 写工具 → HIGH
+    assert analyzer.security_risk(_Ev("restart_container")) is SecurityRisk.MEDIUM  # L3
+    assert analyzer.security_risk(_Ev("run_shell")) is SecurityRisk.HIGH            # L4
+    # 命令里带危险模式 → 抬到 HIGH（L5 也走 HIGH，真正的拒绝在工具层）
+    assert analyzer.security_risk(_Ev("run_shell", _Cmd("rm -rf /tmp"))) is SecurityRisk.HIGH
+    assert analyzer.security_risk(_Ev("get_disk_usage", _Cmd("ls"))) is SecurityRisk.LOW
+    # 批量接口（框架实际调用的那个）
+    pairs = analyzer.analyze_pending_actions([_Ev("get_server_health"), _Ev("run_shell")])
+    assert len(pairs) == 2 and pairs[0][1] is SecurityRisk.LOW
 
 
 def test_full_access_policy_auto_for_high_risk():

@@ -18,10 +18,13 @@ from pydantic import Field
 from ops_pilot.server.permission import TIER_FULL, TIER_REQUESTED
 from ops_pilot.security.levels import RiskLevel, decide
 
-#: SecurityRisk → L 级（保守映射：UNKNOWN 当 L4 处理）
+#: SecurityRisk → L 级。**有损映射，语义必须对齐 analyzer.LEVEL_TO_RISK**：
+#: LOW ← L0/L1（只读，任何档位都自动）、MEDIUM ← L2/L3（写）、HIGH ← L4/L5、
+#: UNKNOWN 保守按 L4。若把 LOW 映射成 L2，只读工具会在"请求审批"档下被要求确认，
+#: 会话会卡在第一步（本项曾真实踩到）。
 _RISK_TO_LEVEL = {
     SecurityRisk.UNKNOWN: RiskLevel.L4,
-    SecurityRisk.LOW: RiskLevel.L2,
+    SecurityRisk.LOW: RiskLevel.L1,
     SecurityRisk.MEDIUM: RiskLevel.L3,
     SecurityRisk.HIGH: RiskLevel.L4,
 }

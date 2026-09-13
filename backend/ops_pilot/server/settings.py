@@ -25,11 +25,16 @@ def _load_file(path: Path) -> int:
     count = 0
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+        if not line or line.startswith("#"):
             continue
-        key, value = line.split("=", 1)
-        value = re.split(r"\s+#", value, maxsplit=1)[0].strip()   # 去行内注释
-        key = key.strip()
+        if "=" in line:
+            key, value = line.split("=", 1)
+            value = re.split(r"\s+#", value, maxsplit=1)[0].strip()   # 去行内注释
+            key = key.strip()
+        elif line.startswith("sk-"):        # 裸模型密钥（key.txt 的实际格式）
+            key, value = "DEEPSEEK_API_KEY", line
+        else:
+            continue
         if key and key not in os.environ:
             os.environ[key] = value
             count += 1
