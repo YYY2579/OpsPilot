@@ -1,0 +1,85 @@
+name: Tauri Build
+
+on:
+  workflow_dispatch:          # 手动触发（Actions 页面点按钮）
+  push:
+    tags: ["v*"]              # 打 tag 时自动触发
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - ".github/workflows/tauri-build.yml"
+
+permissions:
+  contents: write             # 上传 release 需要
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: ""
+          - platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+          - platform: macos-latest
+            args: "--target x86_64-apple-darwin"
+          - platform: ubuntu-22.04
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri -> target
+
+      # Linux 需要的系统依赖
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      # 前端构建
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      # Tauri 构建（产出 .msi / .dmg / .deb / .AppImage）
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: frontend
+          args: ${{ matrix.args }}
+
+      # 上传构建产物
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opspilot-${{ matrix.platform }}
+          path: |
+            frontend/src-tauri/target/release/bundle/msi/*.msi
+            frontend/src-tauri/target/release/bundle/nsis/*.exe
+            frontend/src-tauri/target/release/bundle/dmg/*.dmg
+            frontend/src-tauri/target/release/bundle/deb/*.deb
+            frontend/src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: warn
