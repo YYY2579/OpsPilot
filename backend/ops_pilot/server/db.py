@@ -40,6 +40,13 @@ CREATE TABLE IF NOT EXISTS toolexecution (
     exit_code INTEGER, duration_ms INTEGER, risk_level TEXT, approved_by TEXT,
     tier TEXT, approval_kind TEXT, created_at INTEGER, updated_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS contextusage (
+    id TEXT PRIMARY KEY, task_id TEXT, session_id TEXT, model TEXT,
+    input_tokens INTEGER, output_tokens INTEGER, context_used_tokens INTEGER,
+    model_context_limit INTEGER, context_used_percent REAL,
+    cache_hit_tokens INTEGER, cache_miss_tokens INTEGER, cache_hit_ratio REAL,
+    raw TEXT, created_at INTEGER, updated_at INTEGER
+);
 CREATE TABLE IF NOT EXISTS approvalrequest (
     id TEXT PRIMARY KEY, task_id TEXT, tool_execution_id TEXT,
     operation_description TEXT, risk_level TEXT, impact TEXT, rollback_plan TEXT,

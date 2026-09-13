@@ -64,10 +64,9 @@ from openhands.sdk import (  # noqa: E402
     LLMConvertibleEvent,
     get_logger,
 )
-from openhands.sdk.tool import Tool  # noqa: E402
 from pydantic import SecretStr  # noqa: E402
 
-import ops_pilot.tools.get_server_health.definition  # noqa: F401,E402  注册工具
+import ops_pilot.tools.register_all as tools_reg  # noqa: E402  注册全部只读工具
 from ops_pilot.credentials import assert_no_secrets  # noqa: E402
 
 logger = get_logger(__name__)
@@ -79,7 +78,7 @@ llm = LLM(
     api_key=SecretStr(api_key),
 )
 
-tools = [Tool(name="get_server_health")]
+tools = tools_reg.tool_specs()
 agent = Agent(llm=llm, tools=tools)
 
 serialized_events: list[str] = []

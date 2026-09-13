@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from ops_pilot.server import db
+from ops_pilot.server.usage import normalize_usage, ring_state
 from ops_pilot.server.permission import (
     DEFAULT_BY_ENV,
     PermissionDenied,
@@ -134,6 +135,39 @@ def reject(approval_id: str, rejected_reason: str = "User rejected the action.")
     if row is None:
         raise HTTPException(404, "approval not found")
     return row
+
+
+# ---------- 上下文用量（§B5.1 ContextRing 数据源） ----------
+
+class UsageIn(BaseModel):
+    """agent-server / 前端上报一次 LLM 调用的原始 usage（各家字段不同，后端归一化）。"""
+    task_id: str
+    session_id: str = ""
+    model: str = ""
+    model_context_limit: int | None = None
+    usage: dict[str, Any]
+
+
+@app.post("/api/tasks/{task_id}/context-usage")
+def record_context_usage(task_id: str, body: UsageIn):
+    payload = normalize_usage(body.usage, model_context_limit=body.model_context_limit)
+    row = db.insert(app.state.conn, "contextusage", {
+        "task_id": task_id,
+        "session_id": body.session_id,
+        "model": body.model,
+        "raw": body.usage,
+        **payload,
+    })
+    return {**row, "ring_state": ring_state(payload["context_used_percent"])}
+
+
+@app.get("/api/tasks/{task_id}/context-usage")
+def get_context_usage(task_id: str):
+    rows = [r for r in db.fetch_all(app.state.conn, "contextusage") if r["task_id"] == task_id]
+    if not rows:
+        raise HTTPException(404, "该任务还没有用量记录")
+    latest = rows[0]
+    return {**latest, "ring_state": ring_state(latest["context_used_percent"])}
 
 
 # ---------- 权限档位（§A6.5） ----------

@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from typing import Any, Sequence
 
-from ops_pilot.ssh.client import CommandRunner, SshError
+from ops_pilot.ssh.client import CommandRunner
+
+# CollectionError 与命令执行统一由 sshcmd 提供（其他工具复用同一套错误协议）
+from ops_pilot.tools.sshcmd import CollectionError, run_checked
 
 # ---- 阈值（§A6.2 精神：阈值在工具内，不交给 LLM） ----
 CPU_WARN = 80.0
@@ -25,27 +28,6 @@ LEVEL_CRIT = "critical"
 
 # 单条命令超时（秒）
 COMMAND_TIMEOUT = 10.0
-
-
-class CollectionError(RuntimeError):
-    """采集失败。kind 来自 SshError（auth / network / command）。"""
-
-    def __init__(self, kind: str, detail: str) -> None:
-        super().__init__(f"{kind}: {detail}")
-        self.kind = kind
-        self.detail = detail
-
-
-def _run(runner: CommandRunner, command: str, timeout: float = COMMAND_TIMEOUT) -> str:
-    try:
-        code, out, err = runner.run(command, timeout)
-    except SshError as exc:   # 统一错误类型：纯逻辑层只抛 CollectionError
-        raise CollectionError(exc.kind, exc.detail) from exc
-    if code != 0:
-        raise CollectionError("command", f"命令失败（exit {code}）：{command} → {err.strip()[:200]}")
-    if not out.strip():
-        raise CollectionError("command", f"命令无输出：{command}")
-    return out
 
 
 def _parse_loadavg(text: str) -> list[float]:
@@ -142,18 +124,18 @@ def collect_health(
     timeout: float = COMMAND_TIMEOUT,
 ) -> dict[str, Any]:
     """采集目标主机健康快照（全部只读命令）。失败抛 CollectionError。"""
-    load_avg = _parse_loadavg(_run(runner, "cat /proc/loadavg", timeout))
-    cores = _parse_cores(_run(runner, "nproc", timeout))
-    cpu_percent = _parse_proc_stat_pair(_run(runner, _CPU_STAT_CMD, timeout + 2.0))
+    load_avg = _parse_loadavg(run_checked(runner, "cat /proc/loadavg", timeout))
+    cores = _parse_cores(run_checked(runner, "nproc", timeout))
+    cpu_percent = _parse_proc_stat_pair(run_checked(runner, _CPU_STAT_CMD, timeout + 2.0))
 
-    mem = _parse_meminfo(_run(runner, "cat /proc/meminfo", timeout))
+    mem = _parse_meminfo(run_checked(runner, "cat /proc/meminfo", timeout))
     mem_total_gb = round(mem["MemTotal"] / 1024 / 1024, 2)
     mem_used_gb = round((mem["MemTotal"] - mem["MemAvailable"]) / 1024 / 1024, 2)
     mem_percent = round(mem_used_gb / mem_total_gb * 100, 1)
 
-    disk_percent = _parse_df_root(_run(runner, "df -P /", timeout))
-    top_process = _parse_ps(_run(runner, "ps -eo pid,comm,%cpu --sort=-%cpu | head -6", timeout))[:5]
-    os_name = _parse_os_release(_run(runner, "cat /etc/os-release", timeout))
+    disk_percent = _parse_df_root(run_checked(runner, "df -P /", timeout))
+    top_process = _parse_ps(run_checked(runner, "ps -eo pid,comm,%cpu --sort=-%cpu | head -6", timeout))[:5]
+    os_name = _parse_os_release(run_checked(runner, "cat /etc/os-release", timeout))
 
     services: dict[str, str] = {}
     for name in key_services:
