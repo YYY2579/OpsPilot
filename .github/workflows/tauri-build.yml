@@ -20,11 +20,11 @@ jobs:
             artifact: opspilot-windows-x64
           - platform: macos-latest
             args: "--target aarch64-apple-darwin"
-            bundle-dir: aarch64-apple-darwin
+            bundle-dir: aarch64-apple-darwin/release
             artifact: opspilot-macos-arm64
           - platform: macos-latest
             args: "--target x86_64-apple-darwin"
-            bundle-dir: x86_64-apple-darwin
+            bundle-dir: x86_64-apple-darwin/release
             artifact: opspilot-macos-x64
           - platform: ubuntu-22.04
             args: ""
