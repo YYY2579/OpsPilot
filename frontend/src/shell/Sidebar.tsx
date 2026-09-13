@@ -18,9 +18,9 @@ function GroupLabel({ children }: { children: string }) {
 function Row({ active, onClick, children }: { active?: boolean; onClick?: () => void; children: React.ReactNode }) {
   return (
     <button onClick={onClick}
-      className={`w-full flex items-center gap-[8px] h-[30px] px-[14px] text-left
-        ${active ? "bg-surface2" : "hover:bg-surface2"}`}
-      style={active ? { boxShadow: "inset 2px 0 0 var(--accent)" } : undefined}>
+      className={`w-full flex items-center gap-[8px] h-[28px] px-[8px] rounded-[6px] text-left
+        ${active ? "" : "hover:bg-surface2"}`}
+      style={active ? { background: "var(--accent-soft)", color: "var(--accent)", fontWeight: 600 } : undefined}>
       {children}
     </button>
   );
@@ -75,7 +75,7 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
 
   return (
     <aside className="sidebar">
-      <div className="p-[10px]">
+      <div className="mx-[10px] mt-[10px] mb-[8px]">
         <div className="flex items-center gap-[7px] h-[30px] px-[9px] rounded-[7px] border border-line bg-field text-ink3">
           <Icon.search size={13} />
           <span className="text-[12px] truncate">搜索服务器、数据库、项目…</span>
@@ -83,7 +83,7 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto pb-2">
+      <nav className="flex-1 overflow-y-auto px-[6px] pb-[6px]">
         <GroupLabel>资源</GroupLabel>
         <Row active={nav === "servers"} onClick={() => setNav("servers")}>
           <Icon.server size={13} className="text-ink2 shrink-0" />
@@ -176,15 +176,16 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
         </Row>
       </nav>
 
-      <div className="p-[10px] border-t border-line grid grid-cols-2 gap-[6px]">
-        <button className="h-[28px] rounded-[7px] bg-accent text-white text-[12px] flex items-center justify-center gap-[5px]">
+      <div className="shrink-0 border-t border-line px-[10px] py-[8px] grid grid-cols-2 gap-[6px]">
+        <button className="h-[30px] rounded-[7px] bg-accent border border-accent text-white text-[12px] font-semibold flex items-center justify-center gap-[5px]">
           <Icon.plus size={12} />新建连接
         </button>
-        <button className="h-[28px] rounded-[7px] border border-line text-[12px] text-ink2 hover:text-ink flex items-center justify-center gap-[5px]">
+        <button className="h-[30px] rounded-[7px] border border-line bg-surface2 text-[12px] text-ink2 hover:text-ink flex items-center justify-center gap-[5px]">
           <Icon.plus size={12} />新建项目
         </button>
-        <button className="h-[26px] rounded-[7px] border border-line text-[11.5px] text-ink3 hover:text-ink">连接管理</button>
-        <button className="h-[26px] rounded-[7px] border border-line text-[11.5px] text-ink3 hover:text-ink">凭据管理</button>
+        <button className="col-span-2 h-[30px] rounded-[7px] border border-line bg-surface2 text-[12px] text-ink2 hover:text-ink flex items-center justify-center gap-[5px]">
+          <Icon.gear size={12} />连接管理 · 凭据管理
+        </button>
       </div>
     </aside>
   );
