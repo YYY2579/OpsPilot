@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 
 import { useShell, type Tier } from "../state/shell";
 import { Icon } from "./icons";
+import Stream from "../components/Stream";
 
 const TIER_META: Record<Tier, { label: string; color: string; soft: string; icon: (p: { size?: number }) => ReactElement; note: string }> = {
   requested_approval: { label: "请求审批", color: "var(--ok)", soft: "var(--ok-soft)", icon: Icon.lock, note: "每次写操作都需要你确认" },
@@ -71,9 +72,9 @@ function Composer({ disabled }: { disabled?: boolean }) {
 
         <div className="flex items-center gap-[6px] px-[10px] py-[7px] border-t border-line">
           {["添加文件", "选择服务器", "选择数据库", "添加上下文"].map((x) => (
-            <button key={x} className="h-[24px] px-[8px] rounded-[6px] text-[11.5px] text-ink2 hover:text-ink hover:bg-surface2">{x}</button>
+            <button key={x} className="h-[26px] px-[9px] rounded-[6px] border border-line text-[11.5px] text-ink2 hover:text-ink hover:bg-surface2">{x}</button>
           ))}
-          <button className="h-[24px] px-[8px] rounded-[6px] text-[11.5px] text-ink2 hover:text-ink hover:bg-surface2 flex items-center gap-[5px]">
+          <button className="h-[26px] px-[9px] rounded-[6px] border border-line text-[11.5px] text-ink2 hover:text-ink hover:bg-surface2 flex items-center gap-[5px]">
             <Icon.terminal size={12} />使用终端
           </button>
         </div>
@@ -133,27 +134,26 @@ export default function Center({ stateId }: { stateId: string }) {
         </div>
       )}
 
-      <div className="stream">
-        {stateId === "01" ? (
-          <div className="flex flex-col items-center justify-center flex-1 text-center">
-            <div className="w-[46px] h-[46px] rounded-[12px] bg-accent text-white grid place-items-center font-semibold mb-[14px]">OP</div>
-            <h2 className="text-[20px] font-medium text-ink mb-[7px]">今天想检查哪台机器？</h2>
-            <p className="text-[12.5px] text-ink3 max-w-[420px]">
-              用自然语言描述任务，OpsPilot 会识别目标、调用只读工具、给出结论；需要变更时先征求你的确认。
-            </p>
+      {stateId === "01" ? (
+        <div className="stream">
+          <div className="welcome">
+            <div className="w-[46px] h-[46px] rounded-[12px] bg-accent text-white grid place-items-center font-semibold text-[15px] mb-[10px]">OP</div>
+            <h2>今天想检查哪台机器？</h2>
+            <p>用自然语言描述任务，OpsPilot 会识别目标、调用只读工具、给出结论；需要变更时先征求你的确认。</p>
+            <div className="quick">
+              {[
+                { t: "检查这台服务器为什么 CPU 很高", i: Icon.server },
+                { t: "看看 Docker 容器是否正常", i: Icon.tools },
+                { t: "查一下最近的错误日志", i: Icon.logs },
+              ].map((q) => (
+                <div className="q" key={q.t}><span className="ic" style={{ color: "var(--accent)" }}><q.i size={14} /></span>{q.t}</div>
+              ))}
+            </div>
           </div>
-        ) : (
-          <>
-            <div className="self-end max-w-[70%] px-[12px] py-[9px] rounded-[10px] bg-accent text-white text-[13px]">
-              检查这台服务器最近为什么 CPU 使用率很高
-            </div>
-            <div className="text-[13px] text-ink leading-[1.65]">
-              {waiting ? "我已分析完概况，下一步需要重启 backend 容器才能验证——这一步会中断服务 5～15 秒，请确认。" :
-               "我先读取主机健康快照，确认 CPU / 负载 / 内存 / 磁盘的实际情况。"}
-            </div>
-          </>
-        )}
-      </div>
+        </div>
+      ) : (
+        <Stream stateId={stateId} />
+      )}
 
       <Composer disabled={waiting} />
     </div>
