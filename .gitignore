@@ -33,3 +33,8 @@ secrets/
 
 # TypeScript 增量构建产物
 *.tsbuildinfo
+
+# 会话语义事件落盘（运行时产物，不是源码）
+conversations/
+backend/conversations/
+backend/*.db
