@@ -162,11 +162,11 @@ function LiveCenter() {
     const text2 = text.trim();
     if (!text2 || runTask.isPending) return;
     setText("");
-    runTask.mutate({
-      server_id: serverId, user_request: text2, tier,
-      environment: "production", async_run: true,
-    });
-    setActiveTask(null);      // runner 会写入新 task 行；由任务列表选择激活
+    runTask.mutate(
+      { server_id: serverId, user_request: text2, tier,
+        environment: "production", async_run: true },
+      { onSuccess: (row) => setActiveTask(row.id) },   // 创建后立刻激活 → RealStream 开始轮询
+    );
   };
 
   // 档位切换（真 API）：升级需要确认；完全访问必须过 EscalationDialog 闸门

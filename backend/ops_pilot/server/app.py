@@ -330,6 +330,44 @@ def get_context_usage(task_id: str):
     return {**latest, "ring_state": ring_state(latest["context_used_percent"])}
 
 
+# ---------- 数据库树（§B3 侧栏真数据） ----------
+
+@app.get("/api/connections/databases/{database_id}/tree")
+def get_database_tree(database_id: str):
+    """返回数据库树结构（库 → 表），供侧栏渲染。凭据来自 .env。"""
+    row = db.fetch_one(app.state.conn, "databaseconnection", database_id)
+    if row is None:
+        raise HTTPException(404, "database not found")
+    from ops_pilot.db.client import PymysqlRunner
+    from ops_pilot.db.credentials import DbCredentialResolver
+
+    resolver = DbCredentialResolver()
+    try:
+        cred = resolver.resolve(row["credential_ref"])
+    except Exception as exc:
+        raise HTTPException(422, f"凭据解析失败：{exc}")
+    runner = PymysqlRunner(cred)
+    try:
+        _, dbs = runner.query("SHOW DATABASES")
+        tree = []
+        for (db_name,) in dbs:
+            if db_name in ("information_schema", "performance_schema", "mysql", "sys"):
+                continue
+            _, tables = runner.query(
+                "SELECT table_name, table_rows, engine FROM information_schema.tables "
+                "WHERE table_schema = %s AND table_type = 'BASE TABLE' ORDER BY table_name",
+                (db_name,), limit=500,
+            )
+            tree.append({
+                "name": db_name,
+                "table_count": len(tables),
+                "tables": [{"name": t[0], "rows": t[1] or 0, "engine": t[2]} for t in tables[:100]],
+            })
+        return {"database_id": database_id, "host": row["host"], "databases": tree}
+    finally:
+        runner.close()
+
+
 # ---------- 权限档位（§A6.5） ----------
 
 class PermissionIn(BaseModel):
