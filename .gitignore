@@ -30,3 +30,6 @@ secrets/
 *.key
 *.db
 *.sqlite3
+
+# TypeScript 增量构建产物
+*.tsbuildinfo

@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/lib/useviewport.ts","./src/mock/data.ts","./src/shell/center.tsx","./src/shell/menubar.tsx","./src/shell/rail.tsx","./src/shell/sidebar.tsx","./src/shell/topbar.tsx","./src/shell/icons.tsx","./src/state/shell.ts"],"version":"5.9.3"}
