@@ -1,9 +1,11 @@
 import { useShell } from "../state/shell";
-import { DATABASES, NAV_COUNTS, PROJECTS, SERVERS, envColor } from "../mock/data";
+import { DATABASES, NAV_COUNTS, PROJECTS, SERVERS } from "../mock/data";
+import { envColor as realEnvColor, envLabel } from "../api/types";
+import { useServers } from "../api/hooks";
 import { Icon } from "./icons";
 
 function EnvTag({ env }: { env: string }) {
-  return <span className="ml-auto text-[11px] font-medium shrink-0" style={{ color: envColor[env as "生产"] }}>{env}</span>;
+  return <span className="ml-auto text-[11px] font-medium shrink-0" style={{ color: realEnvColor(env) }}>{envLabel(env)}</span>;
 }
 
 function StatusDot({ status }: { status: string }) {
@@ -45,6 +47,15 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
   const { nav, setNav } = useShell();
   const collapsed = useShell((s) => s.leftCollapsed);
   const dbOpen = stateId === "08";
+  const { data: realServers } = useServers();
+  const activeServerId = useShell((s) => s.activeServerId);
+  const setActiveServer = useShell((s) => s.setActiveServer);
+  const servers: { key: string; name: string; sub: string; env: string; status: string; active: boolean }[] =
+    realServers
+      ? realServers.map((s) => ({ key: s.id, name: s.name, sub: s.host, env: s.environment,
+                                  status: s.status, active: s.id === activeServerId }))
+      : SERVERS.map((s) => ({ key: s.id, name: s.name, sub: s.ip, env: s.env,
+                              status: s.status, active: s.name === "HK-Ubuntu" }));
 
   if (collapsed) {
     return (
@@ -91,15 +102,17 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
           <span className="ml-auto text-[11px] text-ink3">{NAV_COUNTS.servers}</span>
         </Row>
 
-        {nav === "servers" && SERVERS.map((s) => (
-          <Row key={s.id}>
+        {nav === "servers" && servers.map((s) => (
+          <Row key={s.key} active={s.active}
+               onClick={() => { setActiveServer(s.key); setNav("servers"); }}>
             <span className="w-[13px]" />
             <StatusDot status={s.status} />
             <span className="flex flex-col min-w-0 leading-[1.25]">
               <span className="text-[12.5px] text-ink truncate">{s.name}</span>
-              <span className="text-[10.5px] text-ink3">{s.ip}</span>
+              <span className="text-[10.5px] text-ink3">{s.sub}</span>
             </span>
-            <EnvTag env={s.env} />
+            <span className="ml-auto text-[11px] font-medium shrink-0"
+                  style={{ color: realEnvColor(s.env) }}>{envLabel(s.env)}</span>
           </Row>
         ))}
 

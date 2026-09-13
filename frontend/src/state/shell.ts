@@ -13,6 +13,11 @@ interface ShellState {
   nav: NavKey;
   menuOpen: string | null;
   tier: Tier;
+  backendOnline: boolean;
+  activeServerId: string | null;
+  activeTaskId: string | null;
+  sessionId: string;
+  tierLoading: boolean;
   dialogOpen: boolean;
   setTheme: (t: Theme) => void;
   toggleTheme: () => void;
@@ -22,6 +27,10 @@ interface ShellState {
   setNav: (n: NavKey) => void;
   setMenu: (m: string | null) => void;
   setTier: (t: Tier) => void;
+  setBackendOnline: (v: boolean) => void;
+  setActiveServer: (id: string | null) => void;
+  setActiveTask: (id: string | null) => void;
+  setTierLoading: (v: boolean) => void;
   openDialog: () => void;
   closeDialog: () => void;
 }
@@ -34,6 +43,11 @@ export const useShell = create<ShellState>((set) => ({
   nav: "servers",
   menuOpen: null,
   tier: "requested_approval",
+  backendOnline: false,
+  activeServerId: null,
+  activeTaskId: null,
+  sessionId: "web-" + Math.random().toString(36).slice(2, 8),
+  tierLoading: false,
   dialogOpen: false,
   setTheme: (theme) => set({ theme }),
   toggleTheme: () => set((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
@@ -43,6 +57,10 @@ export const useShell = create<ShellState>((set) => ({
   setNav: (nav) => set({ nav }),
   setMenu: (menuOpen) => set({ menuOpen }),
   setTier: (tier) => set({ tier }),
+  setBackendOnline: (backendOnline) => set({ backendOnline }),
+  setActiveServer: (activeServerId) => set({ activeServerId }),
+  setActiveTask: (activeTaskId) => set({ activeTaskId }),
+  setTierLoading: (tierLoading) => set({ tierLoading }),
   openDialog: () => set({ dialogOpen: true }),
   closeDialog: () => set({ dialogOpen: false }),
 }));

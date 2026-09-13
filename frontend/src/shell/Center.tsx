@@ -1,8 +1,11 @@
 import type { ReactElement } from "react";
 
+import { useState } from "react";
 import { useShell, type Tier } from "../state/shell";
+import { useChangeTier, useRunTask } from "../api/hooks";
 import { Icon } from "./icons";
 import Stream from "../components/Stream";
+import RealStream from "../components/RealStream";
 
 const TIER_META: Record<Tier, { label: string; color: string; soft: string; icon: (p: { size?: number }) => ReactElement; note: string }> = {
   requested_approval: { label: "请求审批", color: "var(--ok)", soft: "var(--ok-soft)", icon: Icon.lock, note: "每次写操作都需要你确认" },
@@ -56,29 +59,42 @@ export function DangerBanner({ target, env }: { target: string; env: string }) {
 
 type Mode = "Auto" | "Plan" | "Execute" | "Review";
 
-function Composer({ disabled, mode = "Auto", ringPct = 38 }:
-  { disabled?: boolean; mode?: Mode; ringPct?: number }) {
+function Composer({ disabled, mode = "Auto", ringPct = 38, value, onChange, onSend, onTierChange }:
+  { disabled?: boolean; mode?: Mode; ringPct?: number;
+    value?: string; onChange?: (v: string) => void; onSend?: () => void;
+    onTierChange?: (next: Tier) => void }) {
   // 注意：zustand v5 的选择器不能返回新对象（会触发 getSnapshot 无限循环），必须逐项取
   const tier = useShell((s) => s.tier);
   const setTier = useShell((s) => s.setTier);
-  const openDialog = useShell((s) => s.openDialog);
   const meta = TIER_META[tier];
   const TierIcon = meta.icon;
   const modes: Mode[] = ["Auto", "Plan", "Execute", "Review"];
 
-  // 档位切换：升级需要确认，降级即时（§A6.5.3 不对称）
+  // 档位切换的**规则由调用方决定**（live 走真 API + 闸门；mock 走本地循环）
   const onTierClick = () => {
-    if (tier === "requested_approval") setTier("approve_for_me");
-    else if (tier === "approve_for_me") openDialog();      // 升到完全访问必须过闸门
-    else setTier("requested_approval");                    // 降级不弹窗
+    const next: Tier = tier === "requested_approval" ? "approve_for_me"
+      : tier === "approve_for_me" ? "full_access" : "requested_approval";
+    if (onTierChange) onTierChange(next);
+    else setTier(next);
   };
 
   return (
     <div className="composer">
       {tier === "full_access" && <DangerBanner target="HK-Ubuntu" env="生产" />}
       <div className="rounded-[11px] border border-line2 bg-field" style={disabled ? { opacity: 0.55 } : undefined}>
-        <div className="px-[13px] py-[12px] text-[13px] text-ink3">
-          {disabled ? "等待你批准后继续…" : "描述你想完成的任务，例如：检查 Nginx 502 的原因"}
+        <div className="px-[13px] py-[12px]">
+          {onSend ? (
+            <textarea
+              value={value ?? ""} onChange={(e) => onChange?.(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !disabled) { e.preventDefault(); onSend(); } }}
+              rows={2}
+              placeholder={disabled ? "等待你批准后继续…" : "描述你想完成的任务，例如：检查 Nginx 502 的原因"}
+              className="w-full resize-none bg-transparent text-[13px] text-ink outline-none placeholder:text-ink3" />
+          ) : (
+            <div className="text-[13px] text-ink3">
+              {disabled ? "等待你批准后继续…" : "描述你想完成的任务，例如：检查 Nginx 502 的原因"}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-[6px] px-[10px] py-[7px] border-t border-line">
@@ -112,7 +128,8 @@ function Composer({ disabled, mode = "Auto", ringPct = 38 }:
               ))}
             </div>
             <ContextRing pct={ringPct} />
-            <button className="w-[30px] h-[30px] rounded-[8px] flex items-center justify-center text-white"
+            <button onClick={onSend}
+                    className="w-[30px] h-[30px] rounded-[8px] flex items-center justify-center text-white"
                     style={{ background: disabled ? "var(--border2)" : "var(--accent)" }}>
               <Icon.send size={14} />
             </button>
@@ -127,8 +144,92 @@ function Composer({ disabled, mode = "Auto", ringPct = 38 }:
   );
 }
 
-export default function Center({ stateId, mode, ringPct }: { stateId: string; mode?: Mode; ringPct?: number }) {
+/** 实况模式：后端在线且未强制指定设计状态时使用（M6-1/M6-2） */
+function LiveCenter() {
+  const sessionId = useShell((s) => s.sessionId);
+  const tier = useShell((s) => s.tier);
+  const setTier = useShell((s) => s.setTier);
+  const activeServerId = useShell((s) => s.activeServerId);
+  const activeTaskId = useShell((s) => s.activeTaskId);
+  const setActiveTask = useShell((s) => s.setActiveTask);
+  const changeTier = useChangeTier();
+  const [text, setText] = useState("");
+  const runTask = useRunTask();
+  const serverId = activeServerId ?? "hk-ubuntu";
+  const meta = TIER_META[tier];
+
+  const onSend = () => {
+    const text2 = text.trim();
+    if (!text2 || runTask.isPending) return;
+    setText("");
+    runTask.mutate({
+      server_id: serverId, user_request: text2, tier,
+      environment: "production", async_run: true,
+    });
+    setActiveTask(null);      // runner 会写入新 task 行；由任务列表选择激活
+  };
+
+  // 档位切换（真 API）：升级需要确认；完全访问必须过 EscalationDialog 闸门
+  const onTierChange = (next: Tier) => {
+    if (next === "full_access") { setTier("full_access"); return; }
+    if (tier === "requested_approval" && next === "approve_for_me") {
+      if (!window.confirm("升级到「帮我批准」：L2–L3 将自动执行（L4 仍会询问）。确认？")) return;
+    }
+    changeTier.mutate(
+      { sessionId, environment: "production", target: next },
+      { onSuccess: () => setTier(next) },
+    );
+  };
+
+  return (
+    <div className="center">
+      <div className="ctx">
+        <Icon.server size={13} className="text-ink2" />
+        <b className="text-ink font-medium">{serverId}</b>
+        <span className="text-[11px] font-medium px-[7px] rounded-full"
+              style={{ color: "var(--err)", background: "var(--err-soft)" }}>生产</span>
+        <span className="flex items-center gap-[5px] text-[12px]" style={{ color: "var(--ok)" }}>
+          <span className="w-[6px] h-[6px] rounded-full bg-current" />后端已连接
+        </span>
+      </div>
+
+      {activeTaskId
+        ? <RealStream taskId={activeTaskId} />
+        : (
+          <div className="stream">
+            <div className="welcome">
+              <div className="w-[46px] h-[46px] rounded-[12px] bg-accent text-white grid place-items-center font-semibold text-[15px] mb-[10px]">OP</div>
+              <h2>今天想检查哪台机器？</h2>
+              <p>后端已连接。描述任务后，Agent 会用只读工具采集事实；需要变更时先请求你的批准。</p>
+            </div>
+          </div>
+        )}
+
+      <Composer
+        disabled={runTask.isPending}
+        mode="Auto"
+        value={text} onChange={setText} onSend={onSend}
+        onTierChange={onTierChange}
+      />
+      <div className="flex items-center gap-[6px] mt-[7px] text-[11px] text-ink3">
+        <span className="px-[6px] py-[1px] rounded border border-line font-medium" style={{ color: meta.color }}>{meta.label}</span>
+        <span>{meta.note} · 当前目标 {serverId}</span>
+      </div>
+    </div>
+  );
+}
+
+export default function Center({ stateId, mode, ringPct, live }: {
+  stateId: string; mode?: Mode; ringPct?: number; live?: boolean;
+}) {
+  const openDialog = useShell((s) => s.openDialog);
+  const setTierLocal = useShell((s) => s.setTier);
+  if (live) return <LiveCenter />;
   const waiting = stateId === "05";
+  const onTierChangeMock = (next: Tier) => {
+    if (next === "full_access") { openDialog(); return; }
+    setTierLocal(next);
+  };
 
   return (
     <div className="center">
@@ -166,7 +267,7 @@ export default function Center({ stateId, mode, ringPct }: { stateId: string; mo
         <Stream stateId={stateId} />
       )}
 
-      <Composer disabled={waiting} mode={mode} ringPct={ringPct} />
+      <Composer disabled={waiting} mode={mode} ringPct={ringPct} onTierChange={onTierChangeMock} />
     </div>
   );
 }

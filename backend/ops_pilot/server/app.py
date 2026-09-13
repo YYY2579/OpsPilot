@@ -11,6 +11,9 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+import os
+from pathlib import Path
+
 from ops_pilot.credentials import CredentialResolver
 from ops_pilot.runtime.runner import ConversationRunner, RunnerError
 from ops_pilot.runtime.states import TaskState
@@ -379,3 +382,11 @@ def change_permission(session_id: str, body: PermissionIn):
 @app.get("/api/audit")
 def query_audit(kind: str | None = None, limit: int = 100):
     return audit.list_events(app.state.conn, kind=kind, limit=limit)
+
+
+# ---------- 前端静态资源（打包后由后端同源提供，避免 CORS） ----------
+_frontend_dist = Path(__file__).resolve().parents[3] / "frontend" / "dist"
+if _frontend_dist.is_dir():
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")

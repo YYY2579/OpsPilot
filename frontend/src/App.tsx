@@ -7,6 +7,7 @@ import Sidebar from "./shell/Sidebar";
 import Center from "./shell/Center";
 import Rail from "./shell/Rail";
 import EscalationDialog from "./components/EscalationDialog";
+import { probeBackend } from "./api/client";
 
 type Mode = "Auto" | "Plan" | "Execute" | "Review";
 const CPU = "分析 CPU 高负载原因";
@@ -28,9 +29,17 @@ const STATE_META: Record<string, { task?: string; pill: "run" | "wait" | "done" 
 };
 
 export default function App() {
-  const { theme, setTheme, setMenu, setTier, setRailTab, setNav, rightCollapsed, toggleLeft, dialogOpen, closeDialog, openDialog } = useShell();
+  const { theme, setTheme, setMenu, setTier, setRailTab, setNav, rightCollapsed, toggleLeft,
+          dialogOpen, closeDialog, openDialog, backendOnline, setBackendOnline } = useShell();
+  const stateParam = new URLSearchParams(window.location.search).get("state");
   const stateId = currentStateId();
   const meta = STATE_META[stateId] ?? STATE_META["01"];
+  const live = backendOnline && !stateParam;     // 无 ?state= 参数 → 实况模式
+
+  // 探测后端（M6-1）：在线则走真数据，离线则回退 mock（设计状态仍可看）
+  useEffect(() => {
+    void probeBackend().then(setBackendOnline);
+  }, [setBackendOnline]);
 
   // 主题 → <html> class（令牌切换的唯一开关）
   useEffect(() => {
@@ -89,7 +98,7 @@ export default function App() {
       <TopBar task={meta.task} state={meta.pill} />
       <div className="main">
         <Sidebar stateId={stateId} />
-        <Center stateId={stateId} mode={meta.mode} ringPct={meta.ringPct} />
+        <Center stateId={stateId} mode={meta.mode} ringPct={meta.ringPct} live={live} />
         <Rail />
       </div>
 
