@@ -33,6 +33,7 @@ TOOL_LEVELS: dict[str, RiskLevel] = {
     "get_container_logs": RiskLevel.L1,
     "check_port": RiskLevel.L1,
     "check_http": RiskLevel.L1,
+    "restart_service": RiskLevel.L3,     # 首个写工具（会中断服务）
 }
 
 #: 规格 §A5.2 中尚未实现的写工具，预先登记等级（实现时必须遵守）

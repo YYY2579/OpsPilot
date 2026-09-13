@@ -116,9 +116,10 @@ def test_enforce_floor_allows_when_approved_or_below_l5():
     enforce_floor(lv.RiskLevel.L4, approved=False)    # 非 L5 不受地板约束
 
 
-def test_tool_levels_all_readonly_are_l1():
-    assert set(TOOL_LEVELS.values()) == {lv.RiskLevel.L1}
-    assert len(TOOL_LEVELS) == 9
+def test_tool_levels_registry():
+    readonly = {k: v for k, v in TOOL_LEVELS.items() if v is lv.RiskLevel.L1}
+    assert len(readonly) == 9                     # 9 个只读工具
+    assert TOOL_LEVELS["restart_service"] is lv.RiskLevel.L3   # 唯一写工具
 
 
 def test_unknown_tool_defaults_to_l4():

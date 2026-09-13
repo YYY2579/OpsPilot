@@ -135,15 +135,19 @@ def project(proj: Projection, ev: Event) -> Projection:
         return move(TaskState.INSPECT, f"只读采集 {ev.tool}")
 
     if ev.kind == "observation":
-        if proj.state == TaskState.EXECUTE:
+        # **注意**：审批通过后框架只补发 Observation，不会重发 ActionEvent
+        # （它执行的是此前已发出的那个 pending action）。所以 WAITING_APPROVAL
+        # 也必须作为"进入验证"的源状态，否则状态会卡在待审批（真实踩过）。
+        if proj.state in (TaskState.EXECUTE, TaskState.WAITING_APPROVAL):
             return move(TaskState.VERIFY, "执行完成，开始验证")
         if proj.state == TaskState.INSPECT:
             return move(TaskState.ANALYZE, "拿到采集结果")
         return proj
 
     if ev.kind == "message":
-        # Agent 给出最终结论 → REPORT
-        if proj.state in (TaskState.ANALYZE, TaskState.INSPECT, TaskState.VERIFY, TaskState.PROPOSE_FIX):
+        # Agent 给出最终结论 → REPORT（WAITING_APPROVAL / EXECUTE 也要能收尾）
+        if proj.state in (TaskState.ANALYZE, TaskState.INSPECT, TaskState.VERIFY,
+                          TaskState.PROPOSE_FIX, TaskState.EXECUTE, TaskState.WAITING_APPROVAL):
             return move(TaskState.REPORT, "Agent 输出结论")
         if proj.state == TaskState.RECEIVED:
             move(TaskState.CLASSIFY_TASK, "判断任务类型")

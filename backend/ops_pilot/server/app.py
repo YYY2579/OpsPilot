@@ -265,30 +265,33 @@ def list_approvals():
     return db.fetch_all(app.state.conn, "approvalrequest")
 
 
-@app.post("/api/approvals/{approval_id}/approve")
-def approve(approval_id: str, approved_by: str = "mir Y"):
-    row = db.update(
-        app.state.conn,
-        "approvalrequest",
-        approval_id,
-        {"status": "approved", "approved_by": approved_by, "approved_at": db.now()},
-    )
+def _resolve_approval(approval_id: str, *, accept: bool, actor: str, reason: str = "") -> dict:
+    """审批落库 + **恢复会话继续执行**（M6-3）。"""
+    patch = ({"status": "approved", "approved_by": actor, "approved_at": db.now()}
+             if accept else {"status": "rejected", "rejected_reason": reason})
+    row = db.update(app.state.conn, "approvalrequest", approval_id, patch)
     if row is None:
         raise HTTPException(404, "approval not found")
-    return row
+    resumed: dict
+    try:
+        resumed = get_runner().resume(row["task_id"], accept=accept, reason=reason)
+    except RunnerError as exc:
+        resumed = {"error": str(exc)}       # 会话已不在内存（进程重启）——如实返回
+    audit.record(app.state.conn, kind="approval", actor=actor, target_type="approval",
+                 target_id=approval_id,
+                 detail={"accept": accept, "reason": reason, "task_id": row["task_id"],
+                         "resumed": resumed.get("state")})
+    return {**row, "resume": resumed}
+
+
+@app.post("/api/approvals/{approval_id}/approve")
+def approve(approval_id: str, approved_by: str = "mir Y"):
+    return _resolve_approval(approval_id, accept=True, actor=approved_by)
 
 
 @app.post("/api/approvals/{approval_id}/reject")
 def reject(approval_id: str, rejected_reason: str = "User rejected the action."):
-    row = db.update(
-        app.state.conn,
-        "approvalrequest",
-        approval_id,
-        {"status": "rejected", "rejected_reason": rejected_reason},
-    )
-    if row is None:
-        raise HTTPException(404, "approval not found")
-    return row
+    return _resolve_approval(approval_id, accept=False, actor="mir Y", reason=rejected_reason)
 
 
 # ---------- 上下文用量（§B5.1 ContextRing 数据源） ----------

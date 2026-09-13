@@ -268,6 +268,67 @@ def test_check_http_connection_failure():
     assert "Failed to connect" in obs.anomalies[0]["hint"]
 
 
+# ---------------- restart_service（首个写工具） ----------------
+
+def test_restart_service_requires_valid_name():
+    from ops_pilot.tools import service_ops
+
+    ex = service_ops.RestartServiceExecutor.__new__(service_ops.RestartServiceExecutor)
+    ex._resolver = None
+    ex._connect_timeout = 1.0
+    ex._command_timeout = 1.0
+    for bad in ("nginx; rm -rf /", "$(whoami)", "a" * 80, ""):
+        with pytest.raises(ValueError):
+            ex.collect(FakeRunner({}), service_ops.RestartServiceAction(server_id="hk-ubuntu", service=bad))
+
+
+def test_restart_service_dry_run_and_real_paths():
+    from ops_pilot.tools import service_ops
+
+    ex = service_ops.RestartServiceExecutor.__new__(service_ops.RestartServiceExecutor)
+    ex._resolver = None
+    ex._connect_timeout = 1.0
+    ex._command_timeout = 1.0
+
+    # dry_run：服务存在
+    data = ex.collect(FakeRunner({"systemctl is-active nginx": (0, "present\n", "")}),
+                      service_ops.RestartServiceAction(server_id="hk-ubuntu", service="nginx",
+                                                       dry_run=True))
+    assert data["dry_run"] is True and data["anomalies"] == []
+    assert "restart" not in data["command"]
+
+    # dry_run：服务不存在 → critical
+    data = ex.collect(FakeRunner({"systemctl is-active ghost": (0, "missing\n", "")}),
+                      service_ops.RestartServiceAction(server_id="hk-ubuntu", service="ghost",
+                                                       dry_run=True))
+    assert data["anomalies"][0]["level"] == "critical"
+
+    # 真实路径：重启成功
+    data = ex.collect(FakeRunner({"systemctl restart nginx": (0, "active\n", "")}),
+                      service_ops.RestartServiceAction(server_id="hk-ubuntu", service="nginx"))
+    assert data["exit_code"] == 0 and data["anomalies"] == []
+
+
+def test_write_tool_is_not_read_only_annotated():
+    import ops_pilot.tools.register_all as reg
+    from ops_pilot.tools import service_ops
+
+    tool = service_ops.RestartServiceTool.create(conv_state=None)[0]
+    assert tool.annotations is not None
+    assert tool.annotations.readOnlyHint is False      # → 需要审批
+    assert tool.annotations.destructiveHint is True
+    assert tool.name == "restart_service"
+    assert "restart_service" in reg.WRITE_TOOL_NAMES
+    assert "restart_service" not in reg.READONLY_TOOL_NAMES
+
+
+def test_write_tool_level_is_l3():
+    from ops_pilot.security.levels import RiskLevel
+    from ops_pilot.security.guard import level_of
+
+    assert level_of("restart_service") is RiskLevel.L3
+
+
 # ---------------- 注册完整性 ----------------
 
 def test_all_readonly_tools_registered():
@@ -276,7 +337,8 @@ def test_all_readonly_tools_registered():
     import ops_pilot.tools.register_all as reg
 
     registered = set(list_registered_tools())
-    missing = [n for n in reg.READONLY_TOOL_NAMES if n not in registered]
+    expected = (*reg.READONLY_TOOL_NAMES, *reg.WRITE_TOOL_NAMES)
+    missing = [n for n in expected if n not in registered]
     assert not missing, f"未注册：{missing}"
 
 

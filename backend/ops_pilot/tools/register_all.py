@@ -8,7 +8,11 @@ from __future__ import annotations
 import ops_pilot.tools.docker  # noqa: F401
 import ops_pilot.tools.get_server_health.definition  # noqa: F401
 import ops_pilot.tools.network  # noqa: F401
+import ops_pilot.tools.service_ops  # noqa: F401
 import ops_pilot.tools.system  # noqa: F401
+
+#: 写工具（需要审批，L3 及以上）
+WRITE_TOOL_NAMES = ("restart_service",)
 
 #: 规格 §A5.2 中已实现的只读工具（顺序即展示顺序）
 READONLY_TOOL_NAMES = (
@@ -28,4 +32,4 @@ def tool_specs() -> list:
     """返回可直接传给 Agent(tools=[...]) 的 Tool spec 列表。"""
     from openhands.sdk.tool import Tool
 
-    return [Tool(name=name) for name in READONLY_TOOL_NAMES]
+    return [Tool(name=name) for name in (*READONLY_TOOL_NAMES, *WRITE_TOOL_NAMES)]

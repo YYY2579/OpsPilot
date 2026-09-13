@@ -79,6 +79,25 @@ def test_approval_then_execute_then_verify():
     assert proj.state is TaskState.VERIFY
 
 
+def test_approved_action_observation_goes_to_verify():
+    """批准后框架只补发 observation（不重发 action）—— 必须能从 WAITING_APPROVAL 进验证。"""
+    proj = Projection()
+    project(proj, Event(kind="action", tool="restart_service"))
+    project(proj, Event(kind="status", status="waiting_for_confirmation"))
+    assert proj.state is TaskState.WAITING_APPROVAL
+    project(proj, Event(kind="observation", tool="restart_service"))
+    assert proj.state is TaskState.VERIFY
+    project(proj, Event(kind="message", text="已完成重启并验证"))
+    assert proj.state is TaskState.REPORT
+
+
+def test_message_from_waiting_approval_can_close():
+    proj = Projection()
+    project(proj, Event(kind="status", status="waiting_for_confirmation"))
+    project(proj, Event(kind="message", text="无需继续，结论如下"))
+    assert proj.state is TaskState.REPORT
+
+
 def test_rejection_returns_to_analyze():
     proj = feed(
         Event(kind="status", status="waiting_for_confirmation"),
@@ -133,6 +152,37 @@ def test_internal_and_terminal_sets_match_spec():
     # §A7.1：一半状态是内部决策态，不单独占版面
     assert INTERNAL == {TaskState.CLASSIFY_TASK, TaskState.SELECT_CONTEXT, TaskState.ANALYZE}
     assert TERMINAL == {TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.TIMEOUT}
+
+
+def test_normalize_unwraps_str_enum_status():
+    """str-Enum 必须取 .value，否则 execution_status 事件会被整条丢掉。"""
+    from enum import Enum
+
+    from ops_pilot.runtime.events import normalize
+
+    class ConversationExecutionStatus(str, Enum):
+        WAITING_FOR_CONFIRMATION = "waiting_for_confirmation"
+        FINISHED = "finished"
+
+    class _Ev:
+        key = "execution_status"
+
+        def __init__(self, value):
+            self.value = value
+
+    ev = normalize(_Ev(ConversationExecutionStatus.WAITING_FOR_CONFIRMATION))
+    assert ev is not None and ev.kind == "status" and ev.status == "waiting_for_confirmation"
+    assert feed(ev).state is TaskState.WAITING_APPROVAL
+
+    ev = normalize(_Ev(ConversationExecutionStatus.FINISHED))
+    assert ev is not None and ev.status == "finished"
+
+    # 其他 key 不关心（按属性判断，不依赖类名）
+    class _Other:
+        key = "title"
+        value = "x"
+
+    assert normalize(_Other()) is None
 
 
 def test_projection_to_dict_serializable():
