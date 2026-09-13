@@ -38,3 +38,7 @@ secrets/
 conversations/
 backend/conversations/
 backend/*.db
+
+# 脚本临时产物（API 推送中间文件 / 构建 run id）
+.api_*.json
+.final_run_id
