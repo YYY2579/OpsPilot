@@ -54,13 +54,24 @@ export function DangerBanner({ target, env }: { target: string; env: string }) {
   );
 }
 
-function Composer({ disabled }: { disabled?: boolean }) {
+type Mode = "Auto" | "Plan" | "Execute" | "Review";
+
+function Composer({ disabled, mode = "Auto", ringPct = 38 }:
+  { disabled?: boolean; mode?: Mode; ringPct?: number }) {
   // 注意：zustand v5 的选择器不能返回新对象（会触发 getSnapshot 无限循环），必须逐项取
   const tier = useShell((s) => s.tier);
   const setTier = useShell((s) => s.setTier);
+  const openDialog = useShell((s) => s.openDialog);
   const meta = TIER_META[tier];
   const TierIcon = meta.icon;
-  const modes = ["Auto", "Plan", "Execute", "Review"] as const;
+  const modes: Mode[] = ["Auto", "Plan", "Execute", "Review"];
+
+  // 档位切换：升级需要确认，降级即时（§A6.5.3 不对称）
+  const onTierClick = () => {
+    if (tier === "requested_approval") setTier("approve_for_me");
+    else if (tier === "approve_for_me") openDialog();      // 升到完全访问必须过闸门
+    else setTier("requested_approval");                    // 降级不弹窗
+  };
 
   return (
     <div className="composer">
@@ -81,8 +92,8 @@ function Composer({ disabled }: { disabled?: boolean }) {
 
         <div className="flex items-center gap-[6px] px-[10px] py-[6px] border-t border-line">
           <button
-            onClick={() => setTier(tier === "requested_approval" ? "approve_for_me" : tier === "approve_for_me" ? "full_access" : "requested_approval")}
-            title="点击切换档位（原型交互）"
+            onClick={onTierClick}
+            title="点击切换档位：升级到完全访问会先弹出确认面板；降级即时生效"
             className="inline-flex items-center gap-[5px] h-[26px] px-[9px] rounded-[7px] text-[11.5px] font-medium shrink-0"
             style={{ background: meta.soft, color: meta.color, border: `1px solid ${meta.color}` }}>
             <TierIcon size={11} />{meta.label}<Icon.chevronDown size={10} />
@@ -97,10 +108,10 @@ function Composer({ disabled }: { disabled?: boolean }) {
           <div className="ml-auto flex items-center gap-[6px] shrink-0">
             <div className="inline-flex items-center h-[26px] rounded-[7px] bg-surface2 border border-line overflow-hidden">
               {modes.map((m) => (
-                <span key={m} className={`px-[8px] h-full grid place-items-center text-[11.5px] whitespace-nowrap ${m === "Auto" ? "bg-accent text-white font-medium" : "text-ink2"}`}>{m}</span>
+                <span key={m} className={`px-[8px] h-full grid place-items-center text-[11.5px] whitespace-nowrap ${m === mode ? "bg-accent text-white font-medium" : "text-ink2"}`}>{m}</span>
               ))}
             </div>
-            <ContextRing pct={38} />
+            <ContextRing pct={ringPct} />
             <button className="w-[30px] h-[30px] rounded-[8px] flex items-center justify-center text-white"
                     style={{ background: disabled ? "var(--border2)" : "var(--accent)" }}>
               <Icon.send size={14} />
@@ -116,7 +127,7 @@ function Composer({ disabled }: { disabled?: boolean }) {
   );
 }
 
-export default function Center({ stateId }: { stateId: string }) {
+export default function Center({ stateId, mode, ringPct }: { stateId: string; mode?: Mode; ringPct?: number }) {
   const waiting = stateId === "05";
 
   return (
@@ -155,7 +166,7 @@ export default function Center({ stateId }: { stateId: string }) {
         <Stream stateId={stateId} />
       )}
 
-      <Composer disabled={waiting} />
+      <Composer disabled={waiting} mode={mode} ringPct={ringPct} />
     </div>
   );
 }

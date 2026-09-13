@@ -6,25 +6,29 @@ import TopBar from "./shell/TopBar";
 import Sidebar from "./shell/Sidebar";
 import Center from "./shell/Center";
 import Rail from "./shell/Rail";
+import EscalationDialog from "./components/EscalationDialog";
 
-const STATE_META: Record<string, { task?: string; pill: "run" | "wait" | "done" | "fail" }> = {
+type Mode = "Auto" | "Plan" | "Execute" | "Review";
+const CPU = "分析 CPU 高负载原因";
+
+const STATE_META: Record<string, { task?: string; pill: "run" | "wait" | "done" | "fail"; mode?: Mode; ringPct?: number }> = {
   "01": { pill: "run" },
-  "02": { task: "分析 CPU 高负载原因", pill: "run" },
-  "03": { task: "分析 CPU 高负载原因", pill: "run" },
-  "04": { task: "分析 CPU 高负载原因", pill: "run" },
-  "05": { task: "重启 backend 容器", pill: "wait" },
-  "06": { task: "分析 CPU 高负载原因", pill: "done" },
+  "02": { task: CPU, pill: "run" },
+  "03": { task: CPU, pill: "run" },
+  "04": { task: CPU, pill: "run" },
+  "05": { task: "重启 backend 容器", pill: "wait", mode: "Plan" },      // 等审批时处于 Plan
+  "06": { task: CPU, pill: "done", ringPct: 78 },                       // 长会话 → 琥珀环
   "07": { task: "获取 Pod 列表", pill: "fail" },
   "08": { task: "核对订单表结构", pill: "run" },
-  "09": { task: "分析 CPU 高负载原因", pill: "run" },
-  "10": { task: "分析 CPU 高负载原因", pill: "run" },
-  "13": { task: "分析 CPU 高负载原因", pill: "run" },
-  "14": { task: "分析 CPU 高负载原因", pill: "run" },
-  "15": { task: "分析 CPU 高负载原因", pill: "run" },
+  "09": { task: CPU, pill: "run" },
+  "10": { task: CPU, pill: "run" },
+  "13": { task: CPU, pill: "run" },
+  "14": { task: CPU, pill: "run" },
+  "15": { task: CPU, pill: "run" },
 };
 
 export default function App() {
-  const { theme, setTheme, setMenu, setTier, setRailTab, setNav, rightCollapsed, toggleLeft } = useShell();
+  const { theme, setTheme, setMenu, setTier, setRailTab, setNav, rightCollapsed, toggleLeft, dialogOpen, closeDialog, openDialog } = useShell();
   const stateId = currentStateId();
   const meta = STATE_META[stateId] ?? STATE_META["01"];
 
@@ -57,6 +61,11 @@ export default function App() {
     if (stateId === "13") setMenu("文件");
   }, [stateId, setMenu]);
 
+  // 状态 14：直接展开升级确认面板（效果图-14）
+  useEffect(() => {
+    if (stateId === "14") openDialog();
+  }, [stateId, openDialog]);
+
   // 快捷键：Ctrl+B 左栏、Ctrl+Alt+B 右栏、Ctrl+Shift+L 主题
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -79,9 +88,15 @@ export default function App() {
       <TopBar task={meta.task} state={meta.pill} />
       <div className="main">
         <Sidebar />
-        <Center stateId={stateId} />
+        <Center stateId={stateId} mode={meta.mode} ringPct={meta.ringPct} />
         <Rail />
       </div>
+
+      <EscalationDialog
+        open={dialogOpen}
+        onCancel={closeDialog}
+        onConfirm={() => { setTier("full_access"); closeDialog(); }}
+      />
     </div>
   );
 }

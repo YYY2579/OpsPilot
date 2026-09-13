@@ -13,6 +13,7 @@ interface ShellState {
   nav: NavKey;
   menuOpen: string | null;
   tier: Tier;
+  dialogOpen: boolean;
   setTheme: (t: Theme) => void;
   toggleTheme: () => void;
   toggleLeft: () => void;
@@ -21,6 +22,8 @@ interface ShellState {
   setNav: (n: NavKey) => void;
   setMenu: (m: string | null) => void;
   setTier: (t: Tier) => void;
+  openDialog: () => void;
+  closeDialog: () => void;
 }
 
 export const useShell = create<ShellState>((set) => ({
@@ -31,6 +34,7 @@ export const useShell = create<ShellState>((set) => ({
   nav: "servers",
   menuOpen: null,
   tier: "requested_approval",
+  dialogOpen: false,
   setTheme: (theme) => set({ theme }),
   toggleTheme: () => set((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
   toggleLeft: () => set((s) => ({ leftCollapsed: !s.leftCollapsed })),
@@ -39,4 +43,6 @@ export const useShell = create<ShellState>((set) => ({
   setNav: (nav) => set({ nav }),
   setMenu: (menuOpen) => set({ menuOpen }),
   setTier: (tier) => set({ tier }),
+  openDialog: () => set({ dialogOpen: true }),
+  closeDialog: () => set({ dialogOpen: false }),
 }));
