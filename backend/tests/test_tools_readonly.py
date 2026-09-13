@@ -82,6 +82,8 @@ def test_disk_usage_min_percent_filter():
 # ---------------- get_process_list ----------------
 
 PS = """    PID    PPID USER     COMMAND         %CPU %MEM     ELAPSED
+ 283500  283499 root     ps             100.0  0.1    00:00
+ 283501  283500 root     head            99.0  0.0    00:00
    2143       1 app      java           182.0 12.5    03:20:11
     882       1 root     containerd       8.6 35.2    10:11:02
    1174       1 root     nginx            4.2  3.1    03:20:10
@@ -95,6 +97,8 @@ def test_process_list_parses_and_flags():
         {"ps -eo pid,ppid,user": (0, PS, ""), "ps -e --no-headers": (0, "512\n", "")},
     )
     assert obs.process_total == 512
+    # 采样命令自身（ps/head）必须被剔除，不能污染榜首
+    assert all(p["name"] not in {"ps", "head"} for p in obs.processes)
     assert obs.processes[0] == {
         "pid": 2143, "ppid": 1, "user": "app", "name": "java",
         "cpu_percent": 182.0, "mem_percent": 12.5, "elapsed": "03:20:11",

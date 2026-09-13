@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -29,7 +30,8 @@ def _load_env_file(path: Path) -> None:
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip())
+            value = re.split(r"\s+#", value, maxsplit=1)[0].strip()   # 去行内注释
+            os.environ.setdefault(key.strip(), value)
 
 
 _load_env_file(ROOT / "key.txt")

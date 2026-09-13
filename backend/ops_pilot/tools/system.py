@@ -125,11 +125,18 @@ class GetProcessListObservation(JsonObservation):
     anomalies: list[dict[str, str]]
 
 
+# 采样命令自身的进程名：`ps ... | head` 会让 ps 自己冲上 CPU 榜首，必须剔除，
+# 否则 Agent 会把"ps 占 100% CPU"当成真实异常上报。
+_SAMPLING_PROCESS_NAMES = frozenset({"ps", "head", "awk", "sort"})
+
+
 def _parse_ps(text: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for line in text.strip().splitlines()[1:]:
         cols = line.split(None, 6)
         if len(cols) < 7:
+            continue
+        if cols[3] in _SAMPLING_PROCESS_NAMES:
             continue
         rows.append({
             "pid": int(cols[0]),
