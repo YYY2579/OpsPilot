@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+/* ============ 设计令牌（唯一色值源，与 prototype/ 及 15 张效果图一致）============ */
+:root {
+  --bg: #111318;
+  --panel: #181B22;
+  --panel2: #1D2129;
+  --input: #20242C;
+  --border: #303641;
+  --border2: #3A4150;
+  --text: #E6EAF0;
+  --text2: #969EAD;
+  --text3: #6B7280;
+  --ok: #3FB950;
+  --warn: #D29922;
+  --err: #F85149;
+  --accent: #388BFD;
+  --accent-soft: rgba(56, 139, 253, 0.14);
+  --ok-soft: rgba(63, 185, 80, 0.13);
+  --warn-soft: rgba(210, 153, 34, 0.13);
+  --err-soft: rgba(248, 81, 73, 0.13);
+}
+
+:root.light {
+  --bg: #F7F8FA;
+  --panel: #FFFFFF;
+  --panel2: #F1F3F7;
+  --input: #FFFFFF;
+  --border: #E3E7EE;
+  --border2: #D3D9E3;
+  --text: #1A1D23;
+  --text2: #5C6472;
+  --text3: #8A92A0;
+  --ok: #1A7F37;
+  --warn: #9A6700;
+  --err: #CF222E;
+  --accent: #0969DA;
+  --accent-soft: rgba(9, 105, 218, 0.1);
+  --ok-soft: rgba(26, 127, 55, 0.1);
+  --warn-soft: rgba(154, 103, 0, 0.11);
+  --err-soft: rgba(207, 34, 46, 0.1);
+}
+
+@theme inline {
+  --color-appbg: var(--bg);
+  --color-surface: var(--panel);
+  --color-surface2: var(--panel2);
+  --color-field: var(--input);
+  --color-line: var(--border);
+  --color-line2: var(--border2);
+  --color-ink: var(--text);
+  --color-ink2: var(--text2);
+  --color-ink3: var(--text3);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-err: var(--err);
+  --color-accent: var(--accent);
+  --color-accentsoft: var(--accent-soft);
+  --color-oksoft: var(--ok-soft);
+  --color-warnsoft: var(--warn-soft);
+  --color-errsoft: var(--err-soft);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* ============ 布局骨架（尺寸不可改，见规格 §3）============ */
+.app { height: 100vh; min-height: 600px; display: flex; flex-direction: column; overflow: hidden; }
+.menubar { height: 30px; flex: none; display: flex; align-items: center; background: var(--panel2); border-bottom: 1px solid var(--border); font-size: 12px; }
+.topbar { height: 56px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.main { flex: 1; display: flex; min-height: 0; }
+.sidebar { width: 260px; flex: none; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.center { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
+.rail { width: 320px; flex: none; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.railmini { width: 44px; flex: none; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 8px; }
+.sidemini { width: 48px; flex: none; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 8px; }
+.ctx { height: 40px; flex: none; display: flex; align-items: center; gap: 9px; padding: 0 18px; border-bottom: 1px solid var(--border); background: var(--panel); font-size: 12.5px; }
+.stream { flex: 1; overflow-y: auto; padding: 13px 22px; display: flex; flex-direction: column; gap: 11px; min-height: 0; }
+.composer { flex: none; padding: 0 22px 16px; }
+/* 超宽屏：聊天列与输入框同时限宽居中（两者限宽值必须一致） */
+.stream > * , .composer > * { max-width: 100%; }
+
+/* ============ 响应式断点（规格 §3.1，不得改动）============ */
+@media (max-width: 1439px) { .sidebar { width: 236px; } .rail { width: 288px; } }
+@media (max-width: 1279px) { .sidebar { width: 220px; } }
+@media (max-width: 1023px) { .sidebar { width: 200px; } .stream { padding: 12px 16px; } .composer { padding: 0 16px 13px; } }
+@media (max-width: 959px) { .sidebar { width: 48px; } }
+@media (min-width: 1700px) { .stream > *, .composer > * { max-width: 1120px; margin-left: auto; margin-right: auto; width: 100%; } }
+@media (max-height: 840px) { .stream { padding: 11px 18px; gap: 10px; } }
+@media (max-height: 720px) {
+  .topbar { height: 50px; }
+  .ctx { height: 36px; }
+  .stream { padding: 9px 16px; gap: 8px; }
+  .composer { padding: 0 16px 11px; }
+}
