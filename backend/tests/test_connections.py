@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 import threading
 
 import pytest
@@ -108,8 +109,10 @@ def test_database_crud_and_test_tcp_failure(client):
     assert client.get("/api/connections/databases").json()[0]["status"] == "offline"
 
 
-def test_database_test_tcp_success_degrades_gracefully(client):
-    # 起一个本地监听端口，模拟「TCP 可达但没有驱动」
+def test_database_test_tcp_success_degrades_gracefully(client, monkeypatch):
+    # 起一个本地监听端口，模拟「TCP 可达但没有驱动」。
+    # sys.modules 里放 None 会让 import pymysql 抛 ImportError —— 与驱动是否真实安装解耦
+    monkeypatch.setitem(sys.modules, "pymysql", None)
     server_sock = socket.socket()
     server_sock.bind(("127.0.0.1", 0))
     server_sock.listen(1)

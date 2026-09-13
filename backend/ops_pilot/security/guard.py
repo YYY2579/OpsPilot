@@ -22,7 +22,7 @@ def enforce_floor(level: RiskLevel, *, approved: bool) -> None:
 
 
 #: 已实现工具的默认风险等级（供审计与前端展示；写工具接入时在这里登记）
-#: 当前 9 个工具全部为只读 → L1
+#: 只读工具全部为 L1
 TOOL_LEVELS: dict[str, RiskLevel] = {
     "get_server_health": RiskLevel.L1,
     "get_disk_usage": RiskLevel.L1,
@@ -33,6 +33,11 @@ TOOL_LEVELS: dict[str, RiskLevel] = {
     "get_container_logs": RiskLevel.L1,
     "check_port": RiskLevel.L1,
     "check_http": RiskLevel.L1,
+    "list_databases": RiskLevel.L1,
+    "list_tables": RiskLevel.L1,
+    "describe_table": RiskLevel.L1,
+    "query_readonly": RiskLevel.L1,
+    "explain_sql": RiskLevel.L1,
     "restart_service": RiskLevel.L3,     # 首个写工具（会中断服务）
 }
 

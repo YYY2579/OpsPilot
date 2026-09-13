@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import ops_pilot.tools.database  # noqa: F401
 import ops_pilot.tools.docker  # noqa: F401
 import ops_pilot.tools.get_server_health.definition  # noqa: F401
 import ops_pilot.tools.network  # noqa: F401
@@ -25,6 +26,11 @@ READONLY_TOOL_NAMES = (
     "get_container_logs",
     "check_port",
     "check_http",
+    "list_databases",
+    "list_tables",
+    "describe_table",
+    "query_readonly",
+    "explain_sql",
 )
 
 
