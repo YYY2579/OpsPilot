@@ -11,7 +11,10 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from ops_pilot.credentials import CredentialResolver
 from ops_pilot.server import db
+from ops_pilot.server import audit, settings
+from ops_pilot.server.probe import test_database, test_server
 from ops_pilot.server.usage import normalize_usage, ring_state
 from ops_pilot.server.permission import (
     DEFAULT_BY_ENV,
@@ -26,7 +29,8 @@ store = PermissionStore()
 
 @app.on_event("startup")
 def _startup() -> None:
-    app.state.conn = db.connect()
+    settings.load_env()          # 凭据只进内存，不打印（§A6.4）
+    app.state.conn = db.connect(os.environ.get("OPSPILOT_DB", "opspilot.db"))
 
 
 # ---------- 连接管理（§A10.1 / §A10.2） ----------
@@ -59,6 +63,93 @@ def get_server(server_id: str):
     if row is None:
         raise HTTPException(404, "server not found")
     return row
+
+
+@app.post("/api/connections/servers/{server_id}/test")
+def test_server_connection(server_id: str, actor: str = "mir Y"):
+    """SSH 连接测试。凭据解析会写审计（只记引用与主机，不记密钥）。"""
+    row = db.fetch_one(app.state.conn, "serverconnection", server_id)
+    if row is None:
+        raise HTTPException(404, "server not found")
+    resolver = CredentialResolver(on_resolve=audit.make_credential_hook(app.state.conn, actor))
+    result = test_server(row["credential_ref"], resolver=resolver)
+    audit.record(
+        app.state.conn,
+        kind="connection_test",
+        actor=actor,
+        target_type="server",
+        target_id=server_id,
+        environment=row.get("environment"),
+        detail={"ok": result["ok"], "stage": result["stage"], "latency_ms": result["latency_ms"]},
+    )
+    db.update(app.state.conn, "serverconnection", server_id,
+              {"status": "online" if result["ok"] else "offline"})
+    return result
+
+
+# ---------- 数据库连接（§A10.2） ----------
+
+class DatabaseIn(BaseModel):
+    name: str
+    db_type: str = "mysql"
+    host: str
+    port: int = 3306
+    username: str
+    credential_ref: str
+    database_name: str = ""
+    readonly: bool = True
+    environment: str = "development"
+
+
+@app.post("/api/connections/databases")
+def create_database(body: DatabaseIn):
+    return db.insert(app.state.conn, "databaseconnection", body.model_dump())
+
+
+@app.get("/api/connections/databases")
+def list_databases():
+    return db.fetch_all(app.state.conn, "databaseconnection")
+
+
+@app.post("/api/connections/databases/{database_id}/test")
+def test_database_connection(database_id: str, actor: str = "mir Y"):
+    row = db.fetch_one(app.state.conn, "databaseconnection", database_id)
+    if row is None:
+        raise HTTPException(404, "database not found")
+    result = test_database(row["credential_ref"], row["host"], row["port"], row["db_type"])
+    audit.record(
+        app.state.conn,
+        kind="connection_test",
+        actor=actor,
+        target_type="database",
+        target_id=database_id,
+        environment=row.get("environment"),
+        detail={"ok": result["ok"], "stage": result["stage"], "latency_ms": result["latency_ms"]},
+    )
+    db.update(app.state.conn, "databaseconnection", database_id,
+              {"status": "online" if result["ok"] else "offline"})
+    return result
+
+
+# ---------- 项目（§A10.3） ----------
+
+class ProjectIn(BaseModel):
+    name: str
+    path: str = ""
+    repository_url: str = ""
+    default_branch: str = "main"
+    environment: str = "development"
+    description: str = ""
+
+
+@app.post("/api/projects")
+def create_project(body: ProjectIn):
+    return db.insert(app.state.conn, "project", body.model_dump())
+
+
+@app.get("/api/projects")
+def list_projects():
+    return db.fetch_all(app.state.conn, "project")
 
 
 # ---------- 任务（§A10.4） ----------
@@ -202,7 +293,23 @@ def change_permission(session_id: str, body: PermissionIn):
             env_confirm=body.env_confirm,
         )
     except PermissionDenied as exc:
+        # 被闸门拒绝的升级尝试同样要留痕（安全事件，不是噪音）
+        audit.record(app.state.conn, kind=audit.KIND_PERMISSION, actor=body.actor,
+                     target_type="session", target_id=session_id,
+                     tier=body.target, environment=body.environment,
+                     detail={"kind": "denied", "reason": str(exc), "from": None, "to": body.target})
         raise HTTPException(422, str(exc))
     record["actor"] = body.actor
     record["at"] = time.time()
+    audit.record(app.state.conn, kind=audit.KIND_PERMISSION, actor=body.actor,
+                 target_type="session", target_id=session_id,
+                 tier=body.target, environment=body.environment,
+                 detail={"kind": record["kind"], "from": record["from"], "to": record["to"]})
     return record
+
+
+# ---------- 审计查询（§A6.5.5） ----------
+
+@app.get("/api/audit")
+def query_audit(kind: str | None = None, limit: int = 100):
+    return audit.list_events(app.state.conn, kind=kind, limit=limit)

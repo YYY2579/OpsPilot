@@ -40,6 +40,11 @@ CREATE TABLE IF NOT EXISTS toolexecution (
     exit_code INTEGER, duration_ms INTEGER, risk_level TEXT, approved_by TEXT,
     tier TEXT, approval_kind TEXT, created_at INTEGER, updated_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS auditevent (
+    id TEXT PRIMARY KEY, kind TEXT NOT NULL, actor TEXT DEFAULT 'system',
+    target_type TEXT, target_id TEXT, tier TEXT, environment TEXT, detail TEXT,
+    created_at INTEGER, updated_at INTEGER
+);
 CREATE TABLE IF NOT EXISTS contextusage (
     id TEXT PRIMARY KEY, task_id TEXT, session_id TEXT, model TEXT,
     input_tokens INTEGER, output_tokens INTEGER, context_used_tokens INTEGER,

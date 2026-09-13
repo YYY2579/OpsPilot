@@ -87,10 +87,15 @@ def assert_no_secrets(text: str, secrets: tuple[str, ...] | list[str]) -> None:
 
 
 class CredentialResolver:
-    """从环境变量解析凭据。真实部署时替换为密钥环实现，接口不变。"""
+    """从环境变量解析凭据。真实部署时替换为密钥环实现，接口不变。
 
-    def __init__(self, environ: dict[str, str] | None = None) -> None:
+    on_resolve: 可选的解析回调（§A6.4 要求每次解析留痕）。
+    回调只会收到 **redacted() 后的脱敏视图**，绝不含密码或私钥内容。
+    """
+
+    def __init__(self, environ: dict[str, str] | None = None, on_resolve=None) -> None:
         self._env = os.environ if environ is None else environ
+        self._on_resolve = on_resolve
 
     def resolve(self, server_id: str) -> SshCredential:
         prefix = "OPSPILOT_" + normalize_env_prefix(server_id)
@@ -115,7 +120,7 @@ class CredentialResolver:
             port = int(self._env.get(f"{prefix}_PORT") or "22")
         except ValueError as exc:  # pragma: no cover - 防御式
             raise CredentialError("incomplete", f"{prefix}_PORT 不是整数") from exc
-        return SshCredential(
+        credential = SshCredential(
             server_id=server_id,
             host=host,
             port=port,
@@ -123,3 +128,6 @@ class CredentialResolver:
             password=password,
             key_path=key_path,
         )
+        if self._on_resolve is not None:
+            self._on_resolve(credential.redacted())
+        return credential
