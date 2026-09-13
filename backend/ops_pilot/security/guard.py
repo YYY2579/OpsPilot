@@ -39,6 +39,11 @@ TOOL_LEVELS: dict[str, RiskLevel] = {
     "query_readonly": RiskLevel.L1,
     "explain_sql": RiskLevel.L1,
     "restart_service": RiskLevel.L3,     # 首个写工具（会中断服务）
+    # K8s 只读（经 SSH 在服务器上执行 kubectl，kubeconfig 永不离机）
+    "list_namespaces": RiskLevel.L1,
+    "list_pods": RiskLevel.L1,
+    "get_pod_logs": RiskLevel.L1,
+    "get_events": RiskLevel.L1,
 }
 
 #: 规格 §A5.2 中尚未实现的写工具，预先登记等级（实现时必须遵守）

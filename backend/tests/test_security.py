@@ -118,7 +118,7 @@ def test_enforce_floor_allows_when_approved_or_below_l5():
 
 def test_tool_levels_registry():
     readonly = {k: v for k, v in TOOL_LEVELS.items() if v is lv.RiskLevel.L1}
-    assert len(readonly) == 14                    # 14 个只读工具（M7-1 新增 5 个数据库工具）
+    assert len(readonly) == 18                  # 9 SSH + 5 DB + 4 K8s 只读
     assert TOOL_LEVELS["restart_service"] is lv.RiskLevel.L3   # 唯一写工具
 
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 import ops_pilot.tools.database  # noqa: F401
 import ops_pilot.tools.docker  # noqa: F401
 import ops_pilot.tools.get_server_health.definition  # noqa: F401
+import ops_pilot.tools.k8s  # noqa: F401
 import ops_pilot.tools.network  # noqa: F401
 import ops_pilot.tools.service_ops  # noqa: F401
 import ops_pilot.tools.system  # noqa: F401
