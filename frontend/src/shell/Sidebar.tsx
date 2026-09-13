@@ -26,9 +26,25 @@ function Row({ active, onClick, children }: { active?: boolean; onClick?: () => 
   );
 }
 
-export default function Sidebar() {
+function Leaf({ label, level = 1, right, active, caret, icon }: {
+  label: string; level?: 1 | 2; right?: string; active?: boolean;
+  caret?: "open" | "closed"; icon?: "term";
+}) {
+  return (
+    <button className={`leaf${level === 2 ? " l2" : ""}`}
+            style={active ? { color: "var(--text)", borderLeftColor: "var(--accent)", background: "var(--panel2)" } : undefined}>
+      {caret && <span className="text-ink3 text-[9px] w-[9px]">{caret === "open" ? "▾" : "▸"}</span>}
+      {icon === "term" && <Icon.terminal size={11} className="text-ink3" />}
+      <span>{label}</span>
+      {right && <span className="sp">{right}</span>}
+    </button>
+  );
+}
+
+export default function Sidebar({ stateId }: { stateId?: string }) {
   const { nav, setNav } = useShell();
   const collapsed = useShell((s) => s.leftCollapsed);
+  const dbOpen = stateId === "08";
 
   if (collapsed) {
     return (
@@ -93,7 +109,37 @@ export default function Sidebar() {
           <span className="ml-auto text-[11px] text-ink3">{NAV_COUNTS.databases}</span>
         </Row>
 
-        {nav === "databases" && DATABASES.map((d) => (
+        {nav === "databases" && (dbOpen ? (
+          <>
+            <Row active>
+              <span className="w-[13px]" />
+              <Icon.db size={13} className="text-ink2 shrink-0" />
+              <span className="flex flex-col min-w-0 leading-[1.25]">
+                <span className="text-[12.5px] text-ink truncate">MySQL-Production</span>
+                <span className="text-[10.5px] text-ink3">192.168.1.20</span>
+              </span>
+              <EnvTag env="生产" />
+            </Row>
+            <Leaf label="Databases" caret="open" />
+            <Leaf label="ruoyi_cloud" level={2} right="42 表" active />
+            <Leaf label="opspilot" level={2} right="18 表" />
+            <Leaf label="Tables" caret="closed" right="60" />
+            <Leaf label="Views" caret="closed" right="4" />
+            <Leaf label="Procedures" caret="closed" right="2" />
+            <Leaf label="Functions" caret="closed" right="3" />
+            <Leaf label="Query Console" icon="term" />
+            {DATABASES.slice(1).map((d) => (
+              <Row key={d.id}>
+                <span className="w-[13px]" />
+                <span className="flex flex-col min-w-0 leading-[1.25]">
+                  <span className="text-[12.5px] text-ink truncate">{d.name}</span>
+                  <span className="text-[10.5px] text-ink3">{d.tables ? `${d.tables} 张表` : "缓存实例"}</span>
+                </span>
+                <EnvTag env={d.env} />
+              </Row>
+            ))}
+          </>
+        ) : DATABASES.map((d) => (
           <Row key={d.id}>
             <span className="w-[13px]" />
             <span className="flex flex-col min-w-0 leading-[1.25]">
@@ -102,7 +148,7 @@ export default function Sidebar() {
             </span>
             <EnvTag env={d.env} />
           </Row>
-        ))}
+        )))}
 
         <GroupLabel>工作</GroupLabel>
         <Row active={nav === "projects"} onClick={() => setNav("projects")}>

@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { useShell, type RailTab } from "../state/shell";
 import { useViewportWidth, BREAKPOINTS } from "../lib/useViewport";
 import { Icon } from "./icons";
+import { LogsPanel, OverviewPanel, TasksPanel, ToolsPanel } from "../components/RailPanels";
 
 const TABS: { key: RailTab; label: string }[] = [
   { key: "overview", label: "概览" },
@@ -48,12 +49,10 @@ export default function Rail() {
           </button>
         ))}
       </div>
-      <div className="p-[12px] text-[12px] text-ink3">
-        {railTab === "overview" && "概览面板：服务器卡 / 2×2 指标卡 / 服务状态 / 网络状态 / 快速信息（M5-7）"}
-        {railTab === "tools" && "工具面板：工具调用明细 / 目标资源 / 审计卡（M5-7）"}
-        {railTab === "tasks" && "任务面板：步骤链 / 时间线 / 审计卡（M5-7）"}
-        {railTab === "logs" && "日志面板：日志列表 / 筛选 / 在聊天中分析（M5-7）"}
-      </div>
+      {railTab === "overview" && <OverviewPanel />}
+      {railTab === "tools" && <ToolsPanel />}
+      {railTab === "tasks" && <TasksPanel />}
+      {railTab === "logs" && <LogsPanel />}
     </aside>
   );
 }

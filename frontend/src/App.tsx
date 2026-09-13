@@ -43,7 +43,8 @@ export default function App() {
     setMenu(null);
     if (stateId === "08") setNav("databases");
     else if (stateId !== "01") setNav("servers");
-    setRailTab("overview");
+    // 右栏默认 Tab 按状态：04/08→工具，06→任务，其余概览
+    setRailTab(stateId === "04" || stateId === "08" ? "tools" : stateId === "06" ? "tasks" : "overview");
     setTier(stateId === "15" ? "full_access" : "requested_approval");
     if (stateId === "10") {
       setTheme("light");
@@ -87,7 +88,7 @@ export default function App() {
       <MenuBar />
       <TopBar task={meta.task} state={meta.pill} />
       <div className="main">
-        <Sidebar />
+        <Sidebar stateId={stateId} />
         <Center stateId={stateId} mode={meta.mode} ringPct={meta.ringPct} />
         <Rail />
       </div>
