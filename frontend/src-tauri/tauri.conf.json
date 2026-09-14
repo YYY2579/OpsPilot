@@ -1,13 +1,13 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-utils/schema.json",
   "productName": "OpsPilot",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "identifier": "com.opspilot.desktop",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "devUrl": "http://127.0.0.1:8791",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "npm run build:shell"
   },
   "app": {
     "windows": [

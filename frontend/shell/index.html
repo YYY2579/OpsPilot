@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>OpsPilot</title>
+<meta http-equiv="refresh" content="0; url=http://127.0.0.1:8791" />
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: #0E1116; color: #E6EDF3;
+    font-family: "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, sans-serif;
+  }
+  .wrap {
+    height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 18px; padding: 32px;
+  }
+  .logo { font-size: 26px; font-weight: 700; letter-spacing: .5px; }
+  .logo span { color: #3FB950; }
+  .status { color: #8B949E; font-size: 14px; }
+  .hint {
+    display: none; max-width: 560px; line-height: 1.9; font-size: 14px;
+    background: #161B22; border: 1px solid #30363D; border-left: 3px solid #D29922;
+    border-radius: 10px; padding: 18px 22px; color: #E6EDF3;
+  }
+  .hint b { color: #D29922; }
+  code {
+    background: #0D1117; border: 1px solid #30363D; border-radius: 6px;
+    padding: 2px 7px; font-family: Consolas, "Cascadia Code", monospace; font-size: 13px; color: #79C0FF;
+  }
+  .steps { margin: 12px 0 0; padding-left: 20px; color: #C9D1D9; }
+  .steps li { margin: 6px 0; }
+  a { color: #58A6FF; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">Ops<span>Pilot</span></div>
+  <div class="status" id="status">正在连接本机后端 127.0.0.1:8791 …</div>
+
+  <div class="hint" id="hint">
+    <b>连不上后端。</b>桌面壳不含后端，它只是一个窗口——后端必须先启动。
+    <ol class="steps">
+      <li>双击桌面的 <code>启动 OpsPilot.bat</code>（它会自动起后端再开窗口）</li>
+      <li>或在项目根目录执行：<br /><code>backend\.venv\Scripts\python.exe -m uvicorn ops_pilot.server.app:app --host 127.0.0.1 --port 8791</code></li>
+      <li>确认后点此 <a id="retry" href="http://127.0.0.1:8791">重试</a></li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  // 先看后端在不在：probe 由后端自身同源提供，跨源失败也无所谓，
+  // 因为下面无论如何都会执行 replace —— 跳不过去就说明后端确实没起。
+  var jumped = false;
+  try {
+    fetch('http://127.0.0.1:8791/api/connections/servers', { mode: 'no-cors', cache: 'no-store' })
+      .then(function () { go(); })
+      .catch(function () { go(); });
+  } catch (e) { go(); }
+
+  function go() {
+    if (jumped) return;
+    jumped = true;
+    window.location.replace('http://127.0.0.1:8791');
+  }
+
+  // 3 秒后还停留在本页 = 跳转失败 = 后端没起，显示排查提示
+  setTimeout(function () {
+    document.getElementById('hint').style.display = 'block';
+    document.getElementById('status').textContent = '未能连接到后端';
+  }, 3000);
+
+  document.getElementById('retry').addEventListener('click', function (e) {
+    e.preventDefault();
+    go();
+    setTimeout(function () { window.location.reload(); }, 1200);
+  });
+</script>
+</body>
+</html>
