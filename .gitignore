@@ -46,3 +46,7 @@ backend/*.db
 # 验证截图与本地浏览器脚本产物（不是源码）
 ui_live*.png
 frontend/scripts/shot.cjs
+
+# 构建产物本地副本（Release 上已发布，不入库）
+dist-release/
+.release_id
