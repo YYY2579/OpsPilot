@@ -3,7 +3,39 @@ import type {
   ServerRow, TaskEventRow, TaskRow,
 } from "./types";
 
-export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
+/** 桌面壳（Tauri）下前端跑在 tauri:// 协议里，相对路径 /api/... 会打到
+ *  tauri://localhost/api/... 而不是后端 —— 必须显式指向后端地址。
+ *  真实踩过：v0.1.0 打包后所有 API 静默失败，界面"点哪哪不动"。 */
+function isTauri(): boolean {
+  if (typeof window === "undefined") return false;
+  if ("__TAURI_INTERNALS__" in window) return true;
+  const proto = window.location?.protocol ?? "";
+  return proto === "tauri:" || proto === "asset:" || proto === "file:";
+}
+
+/** 后端默认地址。可用 localStorage["opspilot.apiBase"] 覆盖（设置里改端口时用）。 */
+export const DEFAULT_API_BASE = "http://127.0.0.1:8791";
+
+function resolveApiBase(): string {
+  const env = import.meta.env.VITE_API_BASE as string | undefined;
+  if (env) return env;
+  try {
+    const saved = localStorage.getItem("opspilot.apiBase");
+    if (saved) return saved;
+  } catch { /* localStorage 不可用时忽略 */ }
+  return isTauri() ? DEFAULT_API_BASE : "";
+}
+
+export let API_BASE = resolveApiBase();
+
+/** 运行时改后端地址（设置面板 / 端口变更），改完立刻生效并重存。 */
+export function setApiBase(next: string) {
+  API_BASE = next.replace(/\/+$/, "");
+  try {
+    if (next) localStorage.setItem("opspilot.apiBase", API_BASE);
+    else localStorage.removeItem("opspilot.apiBase");
+  } catch { /* ignore */ }
+}
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }

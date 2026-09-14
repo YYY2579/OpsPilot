@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useShell } from "./state/shell";
 import { currentStateId, isLiveMode } from "./lib/viewState";
 import MenuBar from "./shell/MenuBar";
@@ -7,7 +7,7 @@ import Sidebar from "./shell/Sidebar";
 import Center from "./shell/Center";
 import Rail from "./shell/Rail";
 import EscalationDialog from "./components/EscalationDialog";
-import { probeBackend } from "./api/client";
+import { probeBackend, API_BASE } from "./api/client";
 import { useServers } from "./api/hooks";
 
 type Mode = "Auto" | "Plan" | "Execute" | "Review";
@@ -43,9 +43,22 @@ export default function App() {
   const activeServer = allServers?.find((s) => s.id === activeServerId);
 
   // 探测后端：设计态可离线（看版式）；实况态离线必须明确报错，不静默回退。
-  useEffect(() => {
-    void probeBackend().then(setBackendOnline);
+  // 持续轮询：后端常在应用之后才启动，只探一次会导致"起了后端但界面仍报离线"。
+  const [checking, setChecking] = useState(false);
+  const checkBackend = useCallback(async () => {
+    setChecking(true);
+    const ok = await probeBackend();
+    setBackendOnline(ok);
+    setChecking(false);
   }, [setBackendOnline]);
+
+  useEffect(() => {
+    let stopped = false;
+    const tick = () => { if (!stopped) void checkBackend(); };
+    tick();
+    const timer = setInterval(tick, 5000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [checkBackend]);
 
   // 主题 → <html> class（令牌切换的唯一开关）
   useEffect(() => {
@@ -105,10 +118,19 @@ export default function App() {
       <TopBar task={meta.task} state={meta.pill} />
       {/* 实况态 + 后端离线：明确报错，绝不静默换成演示数据 */}
       {live && !backendOnline && (
-        <div className="px-[14px] py-[6px] text-[12px] flex items-center gap-[8px]"
+        <div className="px-[14px] py-[7px] text-[12px] flex items-center gap-[10px] flex-wrap"
              style={{ background: "var(--warn-soft, rgba(214,158,46,.14))", color: "var(--warn)" }}>
           <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ background: "var(--warn)" }} />
-          后端未连接 —— 当前界面不显示任何数据。启动 FastAPI 服务后刷新即可。
+          <span>
+            后端未连接 —— 界面不会显示任何真实数据。请先启动后端：
+            <code className="mx-[4px] px-[5px] py-[1px] rounded"
+                  style={{ background: "rgba(0,0,0,.25)" }}>{API_BASE || "（同源）"}</code>
+          </span>
+          <button type="button" onClick={() => void checkBackend()} disabled={checking}
+                  className="px-[8px] py-[2px] rounded border text-[11px] disabled:opacity-50"
+                  style={{ borderColor: "currentColor", background: "transparent", color: "inherit" }}>
+            {checking ? "重试中…" : "重试"}
+          </button>
         </div>
       )}
       <div className="main">
