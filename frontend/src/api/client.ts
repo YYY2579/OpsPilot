@@ -54,14 +54,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return resp.json() as Promise<T>;
 }
 
-/** 探测后端是否在线（决定前端走真数据还是 mock） */
-export async function probeBackend(): Promise<boolean> {
-  try {
-    const resp = await fetch(`${API_BASE}/api/connections/servers`, {
-      signal: AbortSignal.timeout(2500),
-    });
-    return resp.ok;
-  } catch { return false; }
+/** 探测后端。**依次尝试**候选地址，成功即固定 —— 不依赖任何环境判定。
+ *
+ * 为什么必须枚举：v0.1.1 仅靠 isTauri() 判定，实机（Windows Tauri v2）下
+ * 判定没命中，API_BASE 仍是空串，请求全打到 tauri://localhost 而静默失败。
+ * 与其猜环境，不如真去连一次。返回连通的那个地址，失败返回 null。 */
+const PROBE_CANDIDATES = ["", DEFAULT_API_BASE, "http://localhost:8791"];
+
+export async function probeBackend(): Promise<string | null> {
+  const tried = [API_BASE, ...PROBE_CANDIDATES.filter((c) => c !== API_BASE)];
+  for (const base of tried) {
+    try {
+      const resp = await fetch(`${base}/api/connections/servers`, {
+        signal: AbortSignal.timeout(2500),
+      });
+      if (!resp.ok) continue;
+      API_BASE = base;
+      try {
+        if (base) localStorage.setItem("opspilot.apiBase", base);
+        else localStorage.removeItem("opspilot.apiBase");
+      } catch { /* ignore */ }
+      return base || "（同源）";
+    } catch { /* 换下一个候选 */ }
+  }
+  return null;
 }
 
 // ---------- 连接管理 ----------

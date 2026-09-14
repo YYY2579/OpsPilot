@@ -7,7 +7,7 @@ import Sidebar from "./shell/Sidebar";
 import Center from "./shell/Center";
 import Rail from "./shell/Rail";
 import EscalationDialog from "./components/EscalationDialog";
-import { probeBackend, API_BASE } from "./api/client";
+import { probeBackend, DEFAULT_API_BASE } from "./api/client";
 import { useServers } from "./api/hooks";
 
 type Mode = "Auto" | "Plan" | "Execute" | "Review";
@@ -47,8 +47,8 @@ export default function App() {
   const [checking, setChecking] = useState(false);
   const checkBackend = useCallback(async () => {
     setChecking(true);
-    const ok = await probeBackend();
-    setBackendOnline(ok);
+    const hit = await probeBackend();      // 返回实际连通的地址，失败为 null
+    setBackendOnline(hit !== null);
     setChecking(false);
   }, [setBackendOnline]);
 
@@ -124,7 +124,8 @@ export default function App() {
           <span>
             后端未连接 —— 界面不会显示任何真实数据。请先启动后端：
             <code className="mx-[4px] px-[5px] py-[1px] rounded"
-                  style={{ background: "rgba(0,0,0,.25)" }}>{API_BASE || "（同源）"}</code>
+                  style={{ background: "rgba(0,0,0,.25)" }}>{DEFAULT_API_BASE}</code>
+            已自动尝试过同源与本机 8791 端口。
           </span>
           <button type="button" onClick={() => void checkBackend()} disabled={checking}
                   className="px-[8px] py-[2px] rounded border text-[11px] disabled:opacity-50"
