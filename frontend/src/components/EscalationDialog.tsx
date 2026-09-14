@@ -12,7 +12,7 @@ import { Icon } from "../shell/icons";
  * 4. 「取消」在左、「开启完全访问」在右（错误色实心）。
  */
 export default function EscalationDialog({
-  open, target = "HK-Ubuntu", serverId = "hk-ubuntu", host = "156.224.28.147",
+  open, target = "—", serverId = "—", host = "—",
   environment = "production", onCancel, onConfirm,
 }: {
   open: boolean;

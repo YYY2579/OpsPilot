@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { useTaskEvents, useTaskState, useApprovals, useApprove, useReject } from "../api/hooks";
 import { ApprovalCard, KV, Term, ToolCard, ToolBody } from "./cards";
 import { Icon } from "../shell/icons";
+import { useShell } from "../state/shell";
 
 function stateBadge(state: string) {
   const map: Record<string, { label: string; cls: string }> = {
@@ -29,6 +30,7 @@ export default function RealStream({ taskId }: { taskId: string }) {
   const approvals = useApprovals();
   const approve = useApprove();
   const reject = useReject();
+  const activeServerId = useShell((s) => s.activeServerId);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const proj = state.data;
@@ -86,8 +88,8 @@ export default function RealStream({ taskId }: { taskId: string }) {
       {approval && (
         <ApprovalCard
           operation={approval.operation_description}
-          target="HK-Ubuntu"
-          targetId="hk-ubuntu"
+          target={activeServerId || "—"}
+          targetId={activeServerId || "—"}
           cause="框架已挂起等待你的确认"
           riskLevel={approval.risk_level}
           command="—（见工具调用明细）"

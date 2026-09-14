@@ -8,6 +8,7 @@ import Center from "./shell/Center";
 import Rail from "./shell/Rail";
 import EscalationDialog from "./components/EscalationDialog";
 import { probeBackend } from "./api/client";
+import { useServers } from "./api/hooks";
 
 type Mode = "Auto" | "Plan" | "Execute" | "Review";
 const CPU = "分析 CPU 高负载原因";
@@ -31,13 +32,17 @@ const STATE_META: Record<string, { task?: string; pill: "run" | "wait" | "done" 
 export default function App() {
   const { theme, setTheme, setMenu, setTier, setRailTab, setNav, rightCollapsed, toggleLeft,
           dialogOpen, closeDialog, openDialog, backendOnline, setBackendOnline } = useShell();
-  const stateParam = new URLSearchParams(window.location.search).get("state");
-  const stateId = currentStateId();
-  const meta = STATE_META[stateId] ?? STATE_META["01"];
-  const live = isLiveMode(backendOnline);        // 无 ?state= 且后端在线 → 实况模式（真数据）
-  void stateParam;
+  const stateId = currentStateId();          // null = 实况模式（默认）
+  const design = stateId !== null;           // 仅显式 ?state=NN 才是设计态
+  const meta = (stateId && STATE_META[stateId]) || STATE_META["01"];
+  const live = isLiveMode();
 
-  // 探测后端（M6-1）：在线则走真数据，离线则回退 mock（设计状态仍可看）
+  // 升级确认面板要展示**真实目标**，不能把演示主机名写进安全闸门
+  const activeServerId = useShell((s) => s.activeServerId);
+  const { data: allServers } = useServers();
+  const activeServer = allServers?.find((s) => s.id === activeServerId);
+
+  // 探测后端：设计态可离线（看版式）；实况态离线必须明确报错，不静默回退。
   useEffect(() => {
     void probeBackend().then(setBackendOnline);
   }, [setBackendOnline]);
@@ -48,8 +53,9 @@ export default function App() {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
 
-  // 状态参数驱动的初始状态（M5-8：13 个状态可切换）
+  // 设计态的初始状态（M5-8：13 个状态可切换）。实况模式下不干预。
   useEffect(() => {
+    if (!stateId) { setMenu(null); return; }
     setMenu(null);
     if (stateId === "08") setNav("databases");
     else if (stateId !== "01") setNav("servers");
@@ -97,14 +103,26 @@ export default function App() {
     <div className="app">
       <MenuBar />
       <TopBar task={meta.task} state={meta.pill} />
+      {/* 实况态 + 后端离线：明确报错，绝不静默换成演示数据 */}
+      {live && !backendOnline && (
+        <div className="px-[14px] py-[6px] text-[12px] flex items-center gap-[8px]"
+             style={{ background: "var(--warn-soft, rgba(214,158,46,.14))", color: "var(--warn)" }}>
+          <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ background: "var(--warn)" }} />
+          后端未连接 —— 当前界面不显示任何数据。启动 FastAPI 服务后刷新即可。
+        </div>
+      )}
       <div className="main">
-        <Sidebar stateId={stateId} />
-        <Center stateId={stateId} mode={meta.mode} ringPct={meta.ringPct} live={live} />
+        <Sidebar stateId={stateId ?? undefined} />
+        <Center stateId={stateId ?? "01"} mode={meta.mode} ringPct={meta.ringPct} live={live} design={design} />
         <Rail />
       </div>
 
       <EscalationDialog
         open={dialogOpen}
+        target={activeServer?.name ?? "—"}
+        serverId={activeServer?.id ?? "—"}
+        host={activeServer?.host ?? "—"}
+        environment={activeServer?.environment ?? "production"}
         onCancel={closeDialog}
         onConfirm={() => { setTier("full_access"); closeDialog(); }}
       />

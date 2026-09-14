@@ -152,18 +152,20 @@ function LiveCenter() {
   const activeServerId = useShell((s) => s.activeServerId);
   const activeTaskId = useShell((s) => s.activeTaskId);
   const setActiveTask = useShell((s) => s.setActiveTask);
+  const backendOnline = useShell((s) => s.backendOnline);
   const changeTier = useChangeTier();
   const [text, setText] = useState("");
   const runTask = useRunTask();
-  const serverId = activeServerId ?? "hk-ubuntu";
   const meta = TIER_META[tier];
 
   const onSend = () => {
     const text2 = text.trim();
     if (!text2 || runTask.isPending) return;
+    // 没有选中目标服务器就不发 —— 绝不静默拿一台假主机去执行
+    if (!activeServerId) return;
     setText("");
     runTask.mutate(
-      { server_id: serverId, user_request: text2, tier,
+      { server_id: activeServerId, user_request: text2, tier,
         environment: "production", async_run: true },
       { onSuccess: (row) => setActiveTask(row.id) },   // 创建后立刻激活 → RealStream 开始轮询
     );
@@ -185,12 +187,20 @@ function LiveCenter() {
     <div className="center">
       <div className="ctx">
         <Icon.server size={13} className="text-ink2" />
-        <b className="text-ink font-medium">{serverId}</b>
-        <span className="text-[11px] font-medium px-[7px] rounded-full"
-              style={{ color: "var(--err)", background: "var(--err-soft)" }}>生产</span>
-        <span className="flex items-center gap-[5px] text-[12px]" style={{ color: "var(--ok)" }}>
-          <span className="w-[6px] h-[6px] rounded-full bg-current" />后端已连接
-        </span>
+        <b className="text-ink font-medium">
+          {activeServerId ?? <span className="text-ink3 font-normal">未选择目标服务器</span>}
+        </b>
+        {activeServerId && (
+          <>
+            <span className="text-[11px] font-medium px-[7px] rounded-full"
+                  style={{ color: "var(--err)", background: "var(--err-soft)" }}>生产</span>
+            <span className="flex items-center gap-[5px] text-[12px]"
+                  style={{ color: backendOnline ? "var(--ok)" : "var(--err)" }}>
+              <span className="w-[6px] h-[6px] rounded-full bg-current" />
+              {backendOnline ? "后端已连接" : "后端未连接"}
+            </span>
+          </>
+        )}
       </div>
 
       {activeTaskId
@@ -200,31 +210,39 @@ function LiveCenter() {
             <div className="welcome">
               <div className="w-[46px] h-[46px] rounded-[12px] bg-accent text-white grid place-items-center font-semibold text-[15px] mb-[10px]">OP</div>
               <h2>今天想检查哪台机器？</h2>
-              <p>后端已连接。描述任务后，Agent 会用只读工具采集事实；需要变更时先请求你的批准。</p>
+              <p>
+                {!backendOnline
+                  ? "后端未连接。启动 FastAPI 服务并刷新后，即可用自然语言下发任务。"
+                  : activeServerId
+                    ? "描述任务后，Agent 会用只读工具采集事实；需要变更时先请求你的批准。"
+                    : "请先在左侧选择一台目标服务器，随后描述任务即可。"}
+              </p>
             </div>
           </div>
         )}
 
       <Composer
-        disabled={runTask.isPending}
+        disabled={runTask.isPending || !backendOnline || !activeServerId}
         mode="Auto"
         value={text} onChange={setText} onSend={onSend}
         onTierChange={onTierChange}
       />
       <div className="flex items-center gap-[6px] mt-[7px] text-[11px] text-ink3">
         <span className="px-[6px] py-[1px] rounded border border-line font-medium" style={{ color: meta.color }}>{meta.label}</span>
-        <span>{meta.note} · 当前目标 {serverId}</span>
+        <span>{meta.note}{activeServerId ? ` · 当前目标 ${activeServerId}` : " · 未选择目标服务器"}</span>
       </div>
     </div>
   );
 }
 
-export default function Center({ stateId, mode, ringPct, live }: {
-  stateId: string; mode?: Mode; ringPct?: number; live?: boolean;
+export default function Center({ stateId, mode, ringPct, live, design }: {
+  stateId: string; mode?: Mode; ringPct?: number; live?: boolean; design?: boolean;
 }) {
   const openDialog = useShell((s) => s.openDialog);
   const setTierLocal = useShell((s) => s.setTier);
+  // 实况模式（默认）：一律走真后端。mock 剧本**只**在显式 ?state=NN 的设计态预览里出现。
   if (live) return <LiveCenter />;
+  void design;
   const waiting = stateId === "05";
   const onTierChangeMock = (next: Tier) => {
     if (next === "full_access") { openDialog(); return; }

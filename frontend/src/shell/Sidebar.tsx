@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useShell } from "../state/shell";
-import { DATABASES, PROJECTS, SERVERS } from "../mock/data";
 import { envColor as realEnvColor, envLabel } from "../api/types";
 import { useDatabases, useProjects, useServers } from "../api/hooks";
 import { Icon } from "./icons";
@@ -53,9 +52,9 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
   const setActiveServer = useShell((s) => s.setActiveServer);
   const [notice, setNotice] = useState<string | null>(null);
 
-  // 真实数据源：后端在线则用真实返回值，离线（纯设计态预览）才回退 mock。
-  // 三个列表都是真实 API，不再有"只有界面没有实现"的空壳。
-  const { data: realServers } = useServers();
+  // 唯一数据源：真实 API。**不再有 mock 回退** —— 后端离线时列表为空并显式提示，
+  // 绝不静默塞入演示数据。运维场景下"分不清哪个数字是真的"比空白危险得多。
+  const { data: realServers, isError: serversError } = useServers();
   const { data: realDatabases } = useDatabases();
   const { data: realProjects } = useProjects();
 
@@ -68,26 +67,19 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
   }, [realServers, activeServerId, setActiveServer]);
 
   const servers: { key: string; name: string; sub: string; env: string; status: string; active: boolean }[] =
-    realServers
-      ? realServers.map((s) => ({ key: s.id, name: s.name, sub: s.host, env: s.environment,
-                                  status: s.status, active: s.id === activeServerId }))
-      : SERVERS.map((s) => ({ key: s.id, name: s.name, sub: s.ip, env: s.env,
-                              status: s.status, active: s.name === "HK-Ubuntu" }));
+    (realServers ?? []).map((s) => ({ key: s.id, name: s.name, sub: s.host, env: s.environment,
+                                      status: s.status, active: s.id === activeServerId }));
 
   const databases: { key: string; name: string; sub: string; env: string }[] =
-    realDatabases
-      ? realDatabases.map((d) => ({ key: d.id, name: d.name, sub: `${d.host}:${d.port}`,
-                                    env: d.environment }))
-      : DATABASES.map((d) => ({ key: d.id, name: d.name,
-                                sub: d.tables ? `${d.tables} 张表` : "缓存实例", env: d.env }));
+    (realDatabases ?? []).map((d) => ({ key: d.id, name: d.name, sub: `${d.host}:${d.port}`,
+                                        env: d.environment }));
 
   const projects: { key: string; name: string; env: string }[] =
-    realProjects
-      ? realProjects.map((p) => ({ key: p.id, name: p.name, env: p.environment }))
-      : PROJECTS.map((p) => ({ key: p.id, name: p.name, env: p.env }));
+    (realProjects ?? []).map((p) => ({ key: p.id, name: p.name, env: p.environment }));
 
-  // 计数一律取真实数组长度（离线时取 mock 长度），不再写死。
+  // 计数一律取真实数组长度，不再写死。
   const counts = { servers: servers.length, databases: databases.length, projects: projects.length };
+  const showOffline = !backendOnline || serversError;
 
   if (collapsed) {
     return (
@@ -127,6 +119,13 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-[6px] pb-[6px]">
+        {showOffline && (
+          <div className="mx-[8px] mt-[8px] mb-[4px] px-[10px] py-[8px] rounded-[6px] text-[11px] leading-[1.6]"
+               style={{ background: "var(--bg2)", color: "var(--text3)" }}>
+            后端未连接 —— 列表为空是真实状态，不是加载失败。
+            <div className="mt-[3px]">启动 FastAPI 服务后刷新即可看到资源。</div>
+          </div>
+        )}
         <GroupLabel>资源</GroupLabel>
         <Row active={nav === "servers"} onClick={() => setNav("servers")}>
           <Icon.server size={13} className="text-ink2 shrink-0" />
