@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useShell } from "../state/shell";
 import { envColor as realEnvColor, envLabel } from "../api/types";
 import { useDatabases, useProjects, useServers } from "../api/hooks";
+import { API_BASE, DEFAULT_API_BASE, setApiBase } from "../api/client";
+import NewResourceDialog, { type NewKind } from "../components/NewResourceDialog";
 import { Icon } from "./icons";
 
 function EnvTag({ env }: { env: string }) {
@@ -50,7 +52,9 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
   const backendOnline = useShell((s) => s.backendOnline);
   const activeServerId = useShell((s) => s.activeServerId);
   const setActiveServer = useShell((s) => s.setActiveServer);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<NewKind | null>(null);
+  const [editingBase, setEditingBase] = useState(false);
+  const [baseVal, setBaseVal] = useState(API_BASE);
 
   // 唯一数据源：真实 API。**不再有 mock 回退** —— 后端离线时列表为空并显式提示，
   // 绝不静默塞入演示数据。运维场景下"分不清哪个数字是真的"比空白危险得多。
@@ -213,29 +217,42 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
         </Row>
       </nav>
 
-      {notice && (
-        <div className="shrink-0 mx-[10px] mb-[6px] px-[9px] py-[6px] rounded-[6px] text-[11px] leading-[1.4]"
-             style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
-          {notice}
+      <div className="shrink-0 border-t border-line px-[10px] py-[8px] grid grid-cols-2 gap-[6px]">
+        <button onClick={() => setDialog("server")} disabled={showOffline}
+                title={showOffline ? "后端未连接，无法新建" : "登记一台服务器"}
+                className="h-[30px] rounded-[7px] bg-accent border border-accent text-white text-[12px] font-semibold flex items-center justify-center gap-[5px] disabled:opacity-45">
+          <Icon.plus size={12} />新建连接
+        </button>
+        <button onClick={() => setDialog("project")} disabled={showOffline}
+                title={showOffline ? "后端未连接，无法新建" : "登记一个项目"}
+                className="h-[30px] rounded-[7px] border border-line bg-surface2 text-[12px] text-ink2 hover:text-ink flex items-center justify-center gap-[5px] disabled:opacity-45">
+          <Icon.plus size={12} />新建项目
+        </button>
+        <button onClick={() => setEditingBase((v) => !v)}
+                className="col-span-2 h-[30px] rounded-[7px] border border-line bg-surface2 text-[12px] text-ink2 hover:text-ink flex items-center justify-center gap-[5px]">
+          <Icon.gear size={12} />后端设置
+        </button>
+      </div>
+
+      {editingBase && (
+        <div className="shrink-0 mx-[10px] mb-[8px] px-[9px] py-[8px] rounded-[6px] border border-line"
+             style={{ background: "var(--bg2)" }}>
+          <div className="text-[11px] text-ink3 mb-[5px] leading-[1.5]">
+            后端地址。桌面端默认为 <code>{DEFAULT_API_BASE}</code>，改端口后在这里同步。
+          </div>
+          <div className="flex gap-[6px]">
+            <input value={baseVal} onChange={(e) => setBaseVal(e.target.value)}
+                   placeholder={DEFAULT_API_BASE}
+                   className="flex-1 h-[28px] px-[8px] rounded-[6px] border border-line bg-field text-[12px] text-ink outline-none" />
+            <button onClick={() => { setApiBase(baseVal.trim()); window.location.reload(); }}
+                    className="h-[28px] px-[11px] rounded-[6px] bg-accent border border-accent text-white text-[11.5px] font-semibold">
+              保存并重连
+            </button>
+          </div>
         </div>
       )}
 
-      <div className="shrink-0 border-t border-line px-[10px] py-[8px] grid grid-cols-2 gap-[6px]">
-        <button onClick={() => { setNav("servers"); setNotice("选择左侧任一服务器，在中间输入运维指令即可开始（Agent 会真实 SSH 采集）。"); }}
-          className="h-[30px] rounded-[7px] bg-accent border border-accent text-white text-[12px] font-semibold flex items-center justify-center gap-[5px]">
-          <Icon.plus size={12} />新建连接
-        </button>
-        <button onClick={() => { setNav("projects"); setNotice("在中间输入「新建项目」并给出名称与路径，Agent 会通过 API 落库。"); }}
-          className="h-[30px] rounded-[7px] border border-line bg-surface2 text-[12px] text-ink2 hover:text-ink flex items-center justify-center gap-[5px]">
-          <Icon.plus size={12} />新建项目
-        </button>
-        <button onClick={() => { setNav("databases"); setNotice(backendOnline
-            ? "已连接后端：数据库列表来自 /api/connections/databases 真实返回值。"
-            : "后端未连接：请先启动 backend（uvicorn ops_pilot.server.app:app --port 8700）并用 VITE_API_BASE 指向它。"); }}
-          className="col-span-2 h-[30px] rounded-[7px] border border-line bg-surface2 text-[12px] text-ink2 hover:text-ink flex items-center justify-center gap-[5px]">
-          <Icon.gear size={12} />连接管理 · 凭据管理
-        </button>
-      </div>
+      {dialog && <NewResourceDialog kind={dialog} onClose={() => setDialog(null)} />}
     </aside>
   );
 }
