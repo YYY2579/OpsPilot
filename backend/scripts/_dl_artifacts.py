@@ -38,17 +38,19 @@ def dl_nofollow(url, dest):
     return len(data)
 
 
-ar = api('/repos/YYY2579/OpsPilot/actions/runs/34863672023/artifacts')
+# 注意：必须按 RUN_ID 取该次运行的 artifacts。
+# 之前这里硬编码了 v0.1.0 的 run id（34863672023），导致传什么 RUN_ID 都下到旧包。
+ar = api(f'/repos/YYY2579/OpsPilot/actions/runs/{RUN_ID}/artifacts')
+print(f"run {RUN_ID} -> {len(ar.get('artifacts', []))} artifacts")
 for a in ar['artifacts']:
     if WANT and a['name'] not in WANT:
         continue
     zp = os.path.join(OUT, a['name'] + '.zip')
-    if os.path.exists(zp) and os.path.getsize(zp) > 1024:
-        print('SKIP(exists)', a['name'])
-        continue
+    # 覆盖下载：不做 SKIP(exists)，否则旧包会一直被复用
     n = dl_nofollow(a['archive_download_url'], zp)
     z = zipfile.ZipFile(zp)
     names = [x for x in z.namelist() if not x.startswith('_')]
     z.extractall(os.path.join(OUT, a['name']))
-    print(f"OK {a['name']:26} {n//1024:7} KB -> {names[:8]}", flush=True)
+    created = a.get('created_at', '?')
+    print(f"OK {a['name']:26} {n//1024:7} KB  created={created} -> {names[:8]}", flush=True)
 print('DONE')
