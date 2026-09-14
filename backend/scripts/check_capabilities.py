@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]          # OpsPilot/
+BACKEND = Path(__file__).resolve().parents[1]       # OpsPilot/backend
 TOOLS_DIR = ROOT / "backend" / "ops_pilot" / "tools"
 REGISTER_FILE = TOOLS_DIR / "register_all.py"
 
@@ -111,20 +112,20 @@ OPTIONAL_ENV = {
 
 
 def load_repo_env() -> None:
-    """按项目既有约定加载 .env（不覆盖已存在的环境变量）。"""
-    for name in (".env",):
-        f = ROOT / name
-        if not f.exists():
-            continue
-        for line in _read(f).splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            k = k.strip()
-            v = re.split(r"\s+#", v, maxsplit=1)[0].strip()
-            if k and k not in os.environ:
-                os.environ[k] = v
+    """按项目既有约定加载 .env 与 key.txt（不覆盖已存在的环境变量）。
+
+    必须同时读 key.txt：真实部署里模型 key 常以裸 `sk-...` 形式存在那里
+    （见 server/settings.py 的 _load_file），只读 .env 会误报 LLM_API_KEY 缺失。
+    这里复用 settings.load_env 保证与运行时**完全同源**，避免两份实现漂移。
+    """
+    import sys
+    if str(BACKEND) not in sys.path:
+        sys.path.insert(0, str(BACKEND))
+    try:
+        from ops_pilot.server.settings import load_env
+        load_env(force=True)
+    except Exception:  # noqa: BLE001 - 自检脚本必须能在模块缺失时降级运行
+        pass
 
 
 def main() -> int:

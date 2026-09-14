@@ -128,7 +128,6 @@ class ConversationRunner:
         from pydantic import SecretStr
 
         import ops_pilot.tools.register_all as tools_reg
-        from openhands.sdk.tool import default_tool_specs
         from ops_pilot.security.analyzer import OpsPilotSecurityAnalyzer
         from ops_pilot.security.policy import policy_for_tier
 
@@ -148,9 +147,18 @@ class ConversationRunner:
 
         # **关键**：OpenHands 自带的通用开发工具（terminal / file_editor / task_tracker）
         # 必须和我们的运维工具一起注册，否则 Agent 只能做运维、不能自由写代码
-        # （规格 §A1.1："保留通用开发能力"）—— 这是此前漏掉的偏离，已修正。
+        # （规格 §A1.1："保留通用开发能力"）。
+        #
+        # SDK 1.47 起，`default_tool_specs()` 只返回 **声明**（Tool(name=...)，不注册实现），
+        # 其 docstring 明确指向 `openhands.tools.preset.default.get_default_tools`
+        # 作为"同时注册实现"的构造函数（来自 openhands-tools 独立包）。
+        # 直接用 specs 会在 resolve_tool 抛 KeyError: ToolDefinition 'terminal' is not
+        # registered（真实踩过）。
+        from openhands.tools.preset.default import get_default_tools
+
+        dev_tools = get_default_tools()
         conversation = Conversation(
-            agent=Agent(llm=llm, tools=[*default_tool_specs(), *tools_reg.tool_specs()]),
+            agent=Agent(llm=llm, tools=[*dev_tools, *tools_reg.tool_specs()]),
             callbacks=[on_sdk_event],
             workspace=workspace,
             persistence_dir=persist_dir,      # 不传则框架用 InMemoryFileStore，事件不落盘

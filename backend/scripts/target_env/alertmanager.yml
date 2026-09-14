@@ -1,0 +1,15 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: opspilot-default
+  group_by: ['alertname', 'service']
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 1h
+
+receivers:
+  - name: opspilot-default
+    # 不配置真实通知渠道：本环境只用于被 OpsPilot 拉取告警（pull 模式）。
+    # 如需推送到企业微信/钉钉，在这里补 webhook_configs 即可。
+    webhook_configs: []

@@ -107,8 +107,22 @@ def test_rejection_returns_to_analyze():
     assert proj.rejections == 1
 
 
-def test_tool_error_goes_to_failed():
+def test_tool_error_returns_to_analyze_not_failed():
+    """工具级错误回到 ANALYZE 让 Agent 自愈，而不是直接判任务失败。
+
+    依据：Agent 的探查天然包含试错（真实案例：先试错一个 server_id、拿到
+    "未配置" 后改用正确标识，任务最终产出了完整报告）。若一见工具报错就
+    FAILED，巡检任务会被误判。任务级失败由框架 status=error 或会话异常兜底。
+    """
     proj = feed(Event(kind="tool_error", tool="list_pods", text="dial tcp timeout"))
+    assert proj.state is TaskState.ANALYZE
+    assert proj.state not in TERMINAL
+    assert proj.errors == 1
+
+
+def test_status_error_goes_to_failed():
+    """真正的任务级失败仍然由框架 status=error 判定为 FAILED（终态）。"""
+    proj = feed(Event(kind="status", status="error"))
     assert proj.state is TaskState.FAILED
     assert proj.state in TERMINAL
 

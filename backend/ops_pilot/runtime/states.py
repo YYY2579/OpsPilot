@@ -71,6 +71,7 @@ class Projection:
     tool_calls: int = 0
     approvals: int = 0
     rejections: int = 0
+    errors: int = 0               # 工具级错误次数（不直接等于任务失败）
 
     def to_dict(self) -> dict:
         return {
@@ -81,6 +82,7 @@ class Projection:
             "tool_calls": self.tool_calls,
             "approvals": self.approvals,
             "rejections": self.rejections,
+            "errors": self.errors,
         }
 
 
@@ -120,7 +122,13 @@ def project(proj: Projection, ev: Event) -> Projection:
         return move(TaskState.ANALYZE, "用户拒绝/驳回待执行动作")
 
     if ev.kind == "tool_error":
-        return move(TaskState.FAILED, f"工具 {ev.tool} 执行失败")
+        # **不要一见工具报错就判 FAILED**：Agent 的探查过程天然包含试错
+        # （例如先试错一个 server_id、发现未配置后改用正确标识）。工具级错误
+        # 回到 ANALYZE 让 Agent 有机会自愈；真正的任务失败由框架的 status=error
+        # 或会话异常兜底（_run_guarded）来判定。真实踩过：巡检任务明明产出了
+        # 完整报告，却因为中途一次预期内的 SSH 探测失败被标成 FAILED。
+        proj.errors += 1
+        return move(TaskState.ANALYZE, f"工具 {ev.tool} 返回错误，重新分析")
 
     if ev.kind == "action":
         proj.tool_calls += 1
