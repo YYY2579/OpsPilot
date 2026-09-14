@@ -83,6 +83,10 @@ class ConversationRunner:
         self._proj: dict[str, Projection] = {}
         self._live: dict[str, Any] = {}        # task_id → live Conversation（待审批时挂起）
         self._tier: dict[str, str] = {}
+        #: task_id → {tool_name: [toolexecution_id, ...]}：已发出 action、尚未收到
+        #: observation/error/reject 的工具行。**必须收口**，否则审计表永远停在
+        #: "running"，把已完成的只读巡检误报成"还在跑"（真实踩过）。
+        self._open_tools: dict[str, dict[str, list[str]]] = {}
 
     # ---------- 任务生命周期 ----------
 
@@ -114,6 +118,7 @@ class ConversationRunner:
             self.run(task_id, **kwargs)
         except Exception as exc:  # noqa: BLE001 - 线程里必须兜底，否则状态永远停在 running
             self._apply(InternalEvent(kind="tool_error", tool="runner", text=str(exc)), task_id)
+            self._close_all_open(task_id, status="error")
             db.update(self.conn, "agenttask", task_id, {"status": "failed"})
 
     def run(self, task_id: str, *, user_request: str, server_id: str,
@@ -227,6 +232,8 @@ class ConversationRunner:
                   "CANCELLED": "cancelled", "TIMEOUT": "timeout"}.get(proj.state.value, "running")
         db.update(self.conn, "agenttask", task_id,
                   {"status": status, "current_step": proj.state.value, "completed_at": db.now()})
+        # 会话已结束，任何仍处 running 的工具行都不该继续挂着
+        self._close_all_open(task_id, status="unknown")
         self._record(task_id, "runner", proj.state.value,
                      f"会话结束，用时 {elapsed}s", {"elapsed_s": elapsed, "tier": tier})
         with self._lock:
@@ -306,6 +313,7 @@ class ConversationRunner:
             cancel(proj)
             self._record(task_id, "user", proj.state.value, "用户取消", {})
         db.update(self.conn, "agenttask", task_id, {"status": "cancelled"})
+        self._close_all_open(task_id, status="cancelled")
         return {"task_id": task_id, "state": TaskState.CANCELLED.value}
 
     def _apply(self, ev: InternalEvent, task_id: str) -> None:
@@ -318,7 +326,7 @@ class ConversationRunner:
 
         if ev.kind == "action":
             tier = self._tier.get(task_id, TIER_REQUESTED)
-            db.insert(self.conn, "toolexecution", {
+            tool_row = db.insert(self.conn, "toolexecution", {
                 "task_id": task_id,
                 "tool_name": ev.tool,
                 "target_type": "server",
@@ -329,6 +337,15 @@ class ConversationRunner:
                 "tier": tier,
                 "approval_kind": "manual" if before == TaskState.WAITING_APPROVAL else "tier_auto",
             })
+            # 登记待收口的工具行；同一工具可能连续调用多次，用列表保序配对。
+            # 一并记住起始时刻，收口时才能落真实的 duration_ms（否则审计里
+            # 每条耗时都是空的，"这个操作花了多久"无从回答）。
+            self._open_tools.setdefault(task_id, {}).setdefault(ev.tool or "", []).append(
+                (tool_row["id"], time.perf_counter()))
+
+        elif ev.kind in ("observation", "tool_error", "reject"):
+            # 工具执行已结束 → 收回该工具最早的一条待收口记录（FIFO 配对）。
+            self._close_tool(task_id, ev, payload)
 
         if proj.state != before:
             self._record(task_id, "state", proj.state.value,
@@ -342,6 +359,40 @@ class ConversationRunner:
                 self.on_event({"task_id": task_id, "kind": ev.kind, "state": proj.state.value})
             except Exception:  # noqa: BLE001
                 pass
+
+    #: 与 tool 状态对应的终态映射
+    _CLOSE_STATUS = {"observation": "success", "tool_error": "error", "reject": "rejected"}
+
+    def _close_tool(self, task_id: str, ev: InternalEvent, payload: dict) -> None:
+        """把已结束的工具执行行从 running 收口为终态。
+
+        observation → success；tool_error → error；reject → rejected。
+        找不到登记（如进程重启后补齐事件）则静默跳过，不影响主流程。
+        """
+        queue = self._open_tools.get(task_id, {}).get(ev.tool or "")
+        if not queue:
+            return
+        row_id, started = queue.pop(0)
+        if not queue:                                  # 该工具已无待收口行，清理空列表
+            self._open_tools.get(task_id, {}).pop(ev.tool or "", None)
+        patch: dict[str, Any] = {
+            "status": self._CLOSE_STATUS.get(ev.kind, "success"),
+            "result": payload if isinstance(payload, dict) else {},
+            "duration_ms": int((time.perf_counter() - started) * 1000),
+        }
+        if ev.text:
+            patch["result"] = {**patch["result"], "text": ev.text[:2000]}
+        db.update(self.conn, "toolexecution", row_id, patch)
+
+    def _close_all_open(self, task_id: str, status: str = "unknown") -> None:
+        """会话结束时收口所有仍处 running 的工具行，避免留下"永远的 running"。"""
+        remaining = self._open_tools.pop(task_id, None) or {}
+        for queue in remaining.values():
+            for row_id, started in queue:
+                db.update(self.conn, "toolexecution", row_id,
+                          {"status": status,
+                           "duration_ms": int((time.perf_counter() - started) * 1000),
+                           "result": {"note": "会话结束前未收到结果事件"}})
 
     def _record(self, task_id: str, kind: str, state: str, message: str, payload: dict) -> None:
         db.insert(self.conn, "taskevent", {

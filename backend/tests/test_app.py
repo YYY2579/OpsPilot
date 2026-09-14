@@ -36,6 +36,94 @@ def test_server_crud(client):
     assert r.status_code == 200
 
 
+def test_server_lookup_accepts_logical_alias(client):
+    """server 路径参数必须是 主键 id / credential_ref / name 三者通吃。
+
+    真实踩过：前端与 Agent 用逻辑别名（如 `jzz-18`）调用 /health，
+    而路由只按随机主键查 → 静默 404，界面显示不出真实数据。
+    """
+    server = client.post("/api/connections/servers", json={
+        "name": "生产靶机-jzz18",
+        "host": "192.168.1.20",
+        "username": "root",
+        "credential_ref": "jzz-18",
+        "environment": "production",
+    }).json()
+
+    for ref in (server["id"], "jzz-18", "生产靶机-jzz18"):
+        r = client.get(f"/api/connections/servers/{ref}")
+        assert r.status_code == 200, f"alias {ref!r} 未解析"
+        assert r.json()["id"] == server["id"]
+
+    assert client.get("/api/connections/servers/nope-not-exist").status_code == 404
+
+
+def test_server_reregistration_dedupes_by_credential_ref(client):
+    """同一逻辑主机重复注册应更新原行，不产生重复记录。"""
+    body = {
+        "name": "生产靶机-jzz18",
+        "host": "192.168.1.20",
+        "username": "root",
+        "credential_ref": "jzz-18",
+        "environment": "production",
+    }
+    first = client.post("/api/connections/servers", json=body).json()
+    again = client.post("/api/connections/servers", json={**body, "host": "192.168.1.21"}).json()
+
+    assert again["id"] == first["id"], "重复注册应复用原 id"
+    assert again["host"] == "192.168.1.21", "字段应被更新"
+    rows = client.get("/api/connections/servers").json()
+    assert len([s for s in rows if s["credential_ref"] == "jzz-18"]) == 1
+
+
+def test_health_endpoint_reports_stage_when_credential_missing(client):
+    """凭据缺失时必须返回 ok=false + stage，而不是编造指标。"""
+    client.post("/api/connections/servers", json={
+        "name": "无凭据主机",
+        "host": "10.255.255.1",
+        "username": "root",
+        "credential_ref": "no-such-cred-alias",
+        "environment": "development",
+    })
+    r = client.get("/api/servers/no-such-cred-alias/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    assert body["stage"] in ("credential", "ssh", "collect")
+    # 失败时不得伪造任何指标字段
+    assert "cpu" not in body and "memory" not in body and "disk" not in body
+    assert isinstance(body.get("message"), str) and body["message"]
+
+
+def test_health_server_id_is_row_id_not_credential_ref(client):
+    """身份字段不能被采集结果覆盖：server_id 必须是行主键，不是凭据别名。
+
+    probe_health() 的返回里自带 server_id（= credential_ref），字典解包时
+    若把它排在后面就会覆盖接口自己算出的 id —— 前端据此做键会错乱。
+    """
+    import ops_pilot.server.app as app_mod
+
+    server = client.post("/api/connections/servers", json={
+        "name": "身份测试机", "host": "10.1.1.1", "username": "root",
+        "credential_ref": "ident-alias", "environment": "development",
+    }).json()
+
+    # 打桩采集层，避免真连 SSH；返回里故意带上会冲突的 server_id。
+    def fake_probe(ref, **_):
+        return {"ok": True, "stage": "ok", "server_id": ref, "cpu": {"percent": 1.0}}
+
+    monkey = app_mod.probe_health
+    app_mod.probe_health = fake_probe
+    try:
+        body = client.get("/api/servers/ident-alias/health").json()
+    finally:
+        app_mod.probe_health = monkey
+
+    assert body["server_id"] == server["id"], "server_id 应是行主键"
+    assert body["credential_ref"] == "ident-alias"
+    assert body["cpu"]["percent"] == 1.0, "采集值应保留"
+
+
 def test_task_and_approval_flow(client):
     task = client.post("/api/tasks", json={
         "title": "分析 CPU 高负载原因",

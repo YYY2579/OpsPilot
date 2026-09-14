@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useShell } from "../state/shell";
 import { DATABASES, PROJECTS, SERVERS } from "../mock/data";
 import { envColor as realEnvColor, envLabel } from "../api/types";
@@ -58,6 +58,14 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
   const { data: realServers } = useServers();
   const { data: realDatabases } = useDatabases();
   const { data: realProjects } = useProjects();
+
+  // 真实数据到位后自动选中第一台服务器 —— 否则概览面板会一直停在
+  // "请选中一台服务器"的空提示，而后端明明有数据，看起来像没接上。
+  useEffect(() => {
+    if (activeServerId) return;
+    const first = realServers?.[0];
+    if (first) setActiveServer(first.id);
+  }, [realServers, activeServerId, setActiveServer]);
 
   const servers: { key: string; name: string; sub: string; env: string; status: string; active: boolean }[] =
     realServers

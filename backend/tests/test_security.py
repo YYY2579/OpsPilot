@@ -9,6 +9,7 @@ from ops_pilot.security import levels as lv
 from ops_pilot.security.guard import (
     L5Blocked,
     TOOL_LEVELS,
+    audit_level_table,
     enforce_floor,
     level_of,
 )
@@ -118,8 +119,24 @@ def test_enforce_floor_allows_when_approved_or_below_l5():
 
 def test_tool_levels_registry():
     readonly = {k: v for k, v in TOOL_LEVELS.items() if v is lv.RiskLevel.L1}
-    assert len(readonly) == 18                  # 9 SSH + 5 DB + 4 K8s 只读
-    assert TOOL_LEVELS["restart_service"] is lv.RiskLevel.L3   # 唯一写工具
+    assert len(readonly) == 22                  # 9 SSH + 5 DB + 4 K8s + 3 告警 + 1 rollout
+    assert TOOL_LEVELS["restart_service"] is lv.RiskLevel.L3
+
+
+def test_no_declared_tool_misses_a_risk_level():
+    """工具清单与等级表必须同步 —— 漏登记会让只读工具落到 L4 默认值。
+
+    真实踩过：list_alerts（只读查询告警）没登记等级 → level_of 返回 L4 →
+    被判定为高危写操作 → 巡检任务凭空卡在 WAITING_APPROVAL 等人工批准。
+    用 audit_level_table() 把这种漂移变成显式失败。
+    """
+    assert audit_level_table() == []
+
+
+def test_readonly_alert_and_k8s_tools_are_l1_not_l4():
+    """此前漏登记的 4 个已实现只读工具必须是 L1，而不是未知默认 L4。"""
+    for tool in ("list_alerts", "inspect_alert", "query_metrics", "rollout_status"):
+        assert level_of(tool) is lv.RiskLevel.L1, f"{tool} 应为只读 L1"
 
 
 def test_unknown_tool_defaults_to_l4():

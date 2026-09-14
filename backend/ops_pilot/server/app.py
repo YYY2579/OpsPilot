@@ -61,6 +61,44 @@ app.add_middleware(
 def _startup() -> None:
     settings.load_env()          # 凭据只进内存，不打印（§A6.4）
     app.state.conn = db.connect(os.environ.get("OPSPILOT_DB", "opspilot.db"))
+    _reconcile_orphans(app.state.conn)
+    _warn_level_drift()
+
+
+def _warn_level_drift() -> None:
+    """启动自检：工具清单与风险等级表若漂移，显式告警。
+
+    漂移的后果不是崩溃，而是"只读工具被误判成高危写操作"，表现为巡检
+    任务莫名卡在等待审批 —— 不查日志根本看不出原因。所以在启动时就喊出来。
+    """
+    from ops_pilot.security.guard import audit_level_table
+
+    missing = audit_level_table()
+    if missing:
+        print(f"[ops_pilot] ⚠️ 风险等级表缺失登记（将按保守 L4 处理）：{missing}")
+
+
+#: 进程重启后不可能还在跑的任务态（会话对象在内存里，重启即丢）。
+_ORPHAN_TASK_STATUSES = ("pending", "running")
+#: 未收到结果事件就随进程消失的工具执行态。
+_ORPHAN_TOOL_STATUSES = ("running",)
+
+
+def _reconcile_orphans(conn) -> None:
+    """把重启后遗留的"进行中"记录改成如实的 interrupted，而不是假装还在跑。
+
+    真实踩过：异步任务在进程被杀后永远停在 running，审计表里的工具行也
+    永远停在 running —— 看板上显示"正在执行"，其实没有任何东西在执行。
+    """
+    for row in db.fetch_all(conn, "agenttask"):
+        if (row.get("status") or "") in _ORPHAN_TASK_STATUSES:
+            db.update(conn, "agenttask", row["id"],
+                      {"status": "interrupted", "current_step": "INTERRUPTED"})
+    for row in db.fetch_all(conn, "toolexecution"):
+        if (row.get("status") or "") in _ORPHAN_TOOL_STATUSES:
+            db.update(conn, "toolexecution", row["id"],
+                      {"status": "unknown",
+                       "result": {"note": "进程重启，未收到结果事件"}})
 
 
 # ---------- 连接管理（§A10.1 / §A10.2） ----------
@@ -79,7 +117,8 @@ class ServerIn(BaseModel):
 
 @app.post("/api/connections/servers")
 def create_server(body: ServerIn):
-    return db.insert(app.state.conn, "serverconnection", body.model_dump())
+    """注册服务器。按 credential_ref 去重：重复注册同一逻辑主机走更新。"""
+    return db.upsert_server(app.state.conn, body.model_dump())
 
 
 @app.get("/api/connections/servers")
@@ -89,7 +128,7 @@ def list_servers():
 
 @app.get("/api/connections/servers/{server_id}")
 def get_server(server_id: str):
-    row = db.fetch_one(app.state.conn, "serverconnection", server_id)
+    row = db.resolve_server(app.state.conn, server_id)
     if row is None:
         raise HTTPException(404, "server not found")
     return row
@@ -98,7 +137,7 @@ def get_server(server_id: str):
 @app.post("/api/connections/servers/{server_id}/test")
 def test_server_connection(server_id: str, actor: str = "mir Y"):
     """SSH 连接测试。凭据解析会写审计（只记引用与主机，不记密钥）。"""
-    row = db.fetch_one(app.state.conn, "serverconnection", server_id)
+    row = db.resolve_server(app.state.conn, server_id)
     if row is None:
         raise HTTPException(404, "server not found")
     resolver = CredentialResolver(on_resolve=audit.make_credential_hook(app.state.conn, actor))
@@ -108,11 +147,11 @@ def test_server_connection(server_id: str, actor: str = "mir Y"):
         kind="connection_test",
         actor=actor,
         target_type="server",
-        target_id=server_id,
+        target_id=row["id"],
         environment=row.get("environment"),
         detail={"ok": result["ok"], "stage": result["stage"], "latency_ms": result["latency_ms"]},
     )
-    db.update(app.state.conn, "serverconnection", server_id,
+    db.update(app.state.conn, "serverconnection", row["id"],
               {"status": "online" if result["ok"] else "offline"})
     return result
 
@@ -454,17 +493,20 @@ def server_health(server_id: str):
     """真实采集目标主机健康快照（只读）。
 
     复用 Agent 工具 `get_server_health` 的同一份纯逻辑，保证界面与 Agent
-    看到的数值一致。未注册的 server_id 返回 404，凭据缺失返回 ok=false
-    并附带 stage（credential/ssh/collect），不编造指标。
+    看到的数值一致。server_id 支持 主键 id / credential_ref（逻辑别名）/
+    name 三种写法。未注册返回 404；凭据缺失返回 ok=false 并附带 stage
+    （credential/ssh/collect），不编造指标。
     """
-    row = db.fetch_one(app.state.conn, "serverconnection", server_id)
+    row = db.resolve_server(app.state.conn, server_id)
     if row is None:
         raise HTTPException(status_code=404, detail="server not found")
-    credential_ref = row.get("credential_ref") or server_id
+    credential_ref = row.get("credential_ref") or row["id"]
     result = probe_health(credential_ref)
-    return {"server_id": server_id, "name": row.get("name"),
-            "host": row.get("host"), "environment": row.get("environment"),
-            **result}
+    # 注意顺序：probe_health 的返回里也带 server_id（= credential_ref），
+    # 若放在后面会把这里的 id 覆盖掉 —— 必须让身份字段最后落定。
+    return {**result, "server_id": row["id"], "credential_ref": credential_ref,
+            "name": row.get("name"), "host": row.get("host"),
+            "environment": row.get("environment")}
 
 
 # ---------- 前端静态资源（打包后由后端同源提供，避免 CORS） ----------

@@ -116,6 +116,52 @@ def fetch_all(conn: sqlite3.Connection, table: str, order: str = "created_at DES
     return [dict(r) for r in cur.fetchall()]
 
 
+def resolve_server(conn: sqlite3.Connection, ref: str) -> dict | None:
+    """按 主键 id / credential_ref（逻辑别名）/ name 任一解析服务器行。
+
+    前端与 Agent 都习惯用逻辑别名（如 `jzz-18`）而不是随机主键 id，
+    若只按 id 查会让 /health 这类端点静默 404 —— 这是真实踩过的 bug。
+    多个候选时取最近更新的一条（同一逻辑主机的重复注册只保留最新）。
+    """
+    if not ref:
+        return None
+    row = fetch_one(conn, "serverconnection", ref)
+    if row is not None:
+        return row
+    cur = conn.execute(
+        "SELECT * FROM serverconnection WHERE credential_ref = ? OR name = ?"
+        " ORDER BY updated_at DESC, created_at DESC LIMIT 1",
+        (ref, ref),
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def upsert_server(conn: sqlite3.Connection, row: dict) -> dict:
+    """按 credential_ref 去重注册：同一逻辑主机重复注册时更新而非新增。"""
+    row = dict(row)
+    existing = None
+    ref = row.get("credential_ref")
+    if ref:
+        cur = conn.execute(
+            "SELECT * FROM serverconnection WHERE credential_ref = ?"
+            " ORDER BY created_at ASC LIMIT 1",
+            (ref,),
+        )
+        r = cur.fetchone()
+        existing = dict(r) if r else None
+    if existing is None:
+        return insert(conn, "serverconnection", row)
+    # 保留原 id，避免已引用它的任务/审计失去指向；删除此前重复行。
+    patch = {k: v for k, v in row.items() if k not in ("id", "created_at")}
+    conn.execute(
+        "DELETE FROM serverconnection WHERE credential_ref = ? AND id != ?",
+        (ref, existing["id"]),
+    )
+    conn.commit()
+    return update(conn, "serverconnection", existing["id"], patch)
+
+
 def _jsonify(row: dict) -> list:
     out = []
     for v in row.values():
