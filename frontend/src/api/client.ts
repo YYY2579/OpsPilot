@@ -65,9 +65,12 @@ export const listApprovals = () => request<ApprovalRow[]>("/api/approvals");
 export const approveApproval = (id: string) =>
   request<ApprovalRow & { resume: Record<string, unknown> }>(
     `/api/approvals/${id}/approve`, { method: "POST" });
+// 注意：参数名必须是 rejected_reason（与后端 app.py 的 reject() 签名一致）。
+// 曾写成 ?reason= —— 后端静默忽略并落默认值 "User rejected the action."，
+// 用户填的拒绝理由全部丢失，审计里答不出"为什么拒绝"（真实踩过）。
 export const rejectApproval = (id: string, reason: string) =>
   request<ApprovalRow & { resume: Record<string, unknown> }>(
-    `/api/approvals/${id}/reject?reason=${encodeURIComponent(reason)}`, { method: "POST" });
+    `/api/approvals/${id}/reject?rejected_reason=${encodeURIComponent(reason)}`, { method: "POST" });
 
 // ---------- 权限档位 ----------
 export const getPermission = (sessionId: string, environment: string) =>
@@ -81,6 +84,23 @@ export const changePermission = (
 // ---------- 审计 ----------
 export const getAudit = (kind?: string, limit = 100) =>
   request<Record<string, unknown>[]>(`/api/audit?limit=${limit}${kind ? `&kind=${kind}` : ""}`);
+
+// ---------- 上下文用量（ContextRing 真实数据源） ----------
+export interface ContextUsage {
+  task_id: string;
+  model?: string;
+  input_tokens: number;
+  output_tokens: number;
+  context_used_tokens: number;
+  model_context_limit: number | null;
+  context_used_percent: number | null;
+  cache_hit_tokens: number;
+  cache_miss_tokens: number;
+  cache_hit_ratio: number | null;
+  ring_state: "ok" | "warning" | "critical" | "unknown";
+}
+export const getContextUsage = (taskId: string) =>
+  request<ContextUsage>(`/api/tasks/${taskId}/context-usage`);
 
 // ---------- 主机健康（真实采集，非 mock） ----------
 export const getServerHealth = (serverId: string) =>

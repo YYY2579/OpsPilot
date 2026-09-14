@@ -215,6 +215,9 @@ class ConversationRunner:
             proj.history.append((TaskState.WAITING_APPROVAL.value, "存在待确认动作（框架判定）"))
             proj.approvals += 1
 
+        # 落一次真实用量：长会话的上下文占用主要累积在首轮工具回灌之后
+        self._record_usage(task_id, conversation)
+
         if proj.state == TaskState.WAITING_APPROVAL:
             approval = self._create_approval(task_id, conversation)
             db.update(self.conn, "agenttask", task_id, {
@@ -223,6 +226,8 @@ class ConversationRunner:
                     "approval_id": approval["id"], "waiting": True}
 
         elapsed = round(time.time() - started, 1)
+        # 终态时再落一次：此时才包含最后一轮的用量
+        self._record_usage(task_id, conversation)
         # 会话循环返回即代表这一轮结束：若停在非终态（通常是 REPORT），补一个终态，
         # 否则任务会永远显示"进行中"（真实踩过）。
         if proj.state not in TERMINAL:
@@ -306,6 +311,61 @@ class ConversationRunner:
             return getattr(ev, "tool_name", None), args
         except Exception:  # noqa: BLE001
             return None, {}
+
+    def _record_usage(self, task_id: str, conversation: Any) -> None:
+        """把会话的真实 token 用量落库（contextusage），供前端 ContextRing 显示。
+
+        **为什么必须有这个方法**：`GET /api/tasks/{id}/context-usage` 端点早就写好了，
+        但整个后端**没有任何生产者**上报用量 —— 只有测试在调 POST。结果真实运行时
+        该表永远为空，端点恒返回 404，前端只能显示硬编码的假百分比（真实踩过）。
+
+        数据源：`ConversationState.stats.get_combined_metrics()` → `Metrics`，
+        其中 `accumulated_token_usage` 是 `TokenUsage`（含 context_window，
+        即模型上下文上限，省得我们再去查模型规格）。
+        """
+        try:
+            state = getattr(conversation, "state", None)
+            stats = getattr(state, "stats", None)
+            if stats is None:
+                return
+            metrics = stats.get_combined_metrics()
+            tu = getattr(metrics, "accumulated_token_usage", None)
+            if tu is None:
+                return
+
+            from ops_pilot.server.usage import normalize_usage
+
+            # TokenUsage 的字段名与 normalize_usage 认的键名不同，这里显式映射。
+            # cache_miss 没有直接字段：miss = prompt - hit（写入缓存的部分单独记）。
+            hit = int(getattr(tu, "cache_read_tokens", 0) or 0)
+            prompt = int(getattr(tu, "prompt_tokens", 0) or 0)
+            limit = int(getattr(tu, "context_window", 0) or 0) or None
+            raw = {
+                "prompt_tokens": prompt,
+                "completion_tokens": int(getattr(tu, "completion_tokens", 0) or 0),
+                "prompt_cache_hit_tokens": hit,
+                "prompt_cache_miss_tokens": max(0, prompt - hit),
+            }
+            payload = normalize_usage(raw, model_context_limit=limit)
+
+            # 同 task_id 只保留一条最新记录（本表语义是"当前占用"，不是流水）
+            existing = next(
+                (r for r in db.fetch_all(self.conn, "contextusage") if r["task_id"] == task_id),
+                None,
+            )
+            row = {
+                "task_id": task_id,
+                "session_id": task_id,
+                "model": getattr(tu, "model", "") or self.model,
+                "raw": raw,
+                **payload,
+            }
+            if existing is None:
+                db.insert(self.conn, "contextusage", row)
+            else:
+                db.update(self.conn, "contextusage", existing["id"], row)
+        except Exception:  # noqa: BLE001 - 用量统计失败绝不能影响任务本身
+            pass
 
     def cancel(self, task_id: str) -> dict:
         proj = self._proj.get(task_id)

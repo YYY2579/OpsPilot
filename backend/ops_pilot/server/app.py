@@ -61,8 +61,31 @@ app.add_middleware(
 def _startup() -> None:
     settings.load_env()          # 凭据只进内存，不打印（§A6.4）
     app.state.conn = db.connect(os.environ.get("OPSPILOT_DB", "opspilot.db"))
+    _load_credential_aliases(app.state.conn)   # 必须在对账前，工具解析要用
     _reconcile_orphans(app.state.conn)
     _warn_level_drift()
+
+
+def _load_credential_aliases(conn) -> None:
+    """把「主键 / 名称 → credential_ref」灌进凭据别名表。
+
+    不建这张表，Agent 调用任何 SSH 工具都会失败：它只知道主键，而环境变量
+    是按 credential_ref 配置的（`OPSPILOT_4D6CC8BD599D_HOST` 并不存在）。
+    表现为 `SSH missing`，但 /health 端点却是通的 —— 极易误判成"工具坏了"。
+    """
+    from ops_pilot.credentials import set_credential_aliases
+
+    aliases: dict[str, str] = {}
+    for row in db.fetch_all(conn, "serverconnection"):
+        ref = row.get("credential_ref")
+        if not ref:
+            continue
+        aliases[row["id"]] = ref
+        if row.get("name"):
+            aliases[row["name"]] = ref
+        if row.get("host"):
+            aliases[row["host"]] = ref
+    set_credential_aliases(aliases)
 
 
 def _warn_level_drift() -> None:
@@ -118,7 +141,10 @@ class ServerIn(BaseModel):
 @app.post("/api/connections/servers")
 def create_server(body: ServerIn):
     """注册服务器。按 credential_ref 去重：重复注册同一逻辑主机走更新。"""
-    return db.upsert_server(app.state.conn, body.model_dump())
+    row = db.upsert_server(app.state.conn, body.model_dump())
+    # 新注册的主机必须立刻进别名表，否则 Agent 拿主键调工具会解析不到凭据
+    _load_credential_aliases(app.state.conn)
+    return row
 
 
 @app.get("/api/connections/servers")

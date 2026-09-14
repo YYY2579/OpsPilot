@@ -2,7 +2,7 @@ import type { ReactElement } from "react";
 
 import { useState } from "react";
 import { useShell, type Tier } from "../state/shell";
-import { useChangeTier, useRunTask } from "../api/hooks";
+import { useChangeTier, useContextUsage, useRunTask } from "../api/hooks";
 import { Icon } from "./icons";
 import Stream from "../components/Stream";
 import RealStream from "../components/RealStream";
@@ -13,35 +13,62 @@ const TIER_META: Record<Tier, { label: string; color: string; soft: string; icon
   full_access: { label: "完全访问", color: "var(--warn)", soft: "var(--warn-soft)", icon: Icon.shieldWarn, note: "L0–L4 自动执行，L5 仍会拦截" },
 };
 
-export function ContextRing({ pct, used = "48.6K", total = "128K", hit = 91, turnsLeft = 26, condensed = false }:
-  { pct: number; used?: string; total?: string; hit?: number; turnsLeft?: number; condensed?: boolean }) {
+/** 把 token 数格式化成 "12.3K" / "1.2M"（仅显示用，不参与计算） */
+function fmtTokens(n: number | null | undefined): string {
+  if (n == null) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+export function ContextRing({ pct, used, total, hit, turnsLeft, condensed = false }:
+  { pct: number; used?: string; total?: string; hit?: number | null;
+    turnsLeft?: number | null; condensed?: boolean }) {
   const color = pct > 90 ? "var(--err)" : pct >= 70 ? "var(--warn)" : "var(--accent)";
   const C = 2 * Math.PI * 12;
+  const dash = `${(C * Math.max(0, Math.min(100, pct))) / 100} ${C}`;
+  // 无用量记录时（后端还没上报）如实显示"—"，不编造数字
+  const hasDetail = hit != null;
   return (
     <div className="relative w-[30px] h-[30px] grid place-items-center group shrink-0">
       <svg width="30" height="30" viewBox="0 0 30 30" className="absolute inset-0">
         <circle cx="15" cy="15" r="12" fill="none" stroke="var(--border)" strokeWidth="3" />
         <circle cx="15" cy="15" r="12" fill="none" stroke={color} strokeWidth="3" strokeLinecap="round"
-                strokeDasharray={`${(C * pct) / 100} ${C}`} transform="rotate(-90 15 15)" />
+                strokeDasharray={dash} transform="rotate(-90 15 15)" />
       </svg>
-      <span className="text-[8px] font-medium relative" style={{ color }}>{pct}%</span>
+      <span className="text-[8px] font-medium relative" style={{ color }}>{Math.round(pct)}%</span>
 
       <div className="hidden group-hover:block absolute bottom-[36px] right-[-6px] z-[60] w-[252px] p-[11px]
                       rounded-[9px] border border-line2 bg-surface text-left"
            style={{ boxShadow: "0 12px 34px rgba(0,0,0,.5)" }}>
         <div className="flex items-center gap-[6px] text-[11px] font-medium text-ink mb-[7px]">
-          <Icon.server size={11} />上下文占用 · {used} / {total} tokens
+          <Icon.server size={11} />上下文占用 · {used ?? "—"} / {total ?? "—"}
         </div>
         <div className="h-[4px] rounded-full bg-surface2 overflow-hidden mb-[8px]">
-          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+          <div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color }} />
         </div>
-        <div className="flex justify-between text-[11.5px] text-ink2 py-[2px]"><span>输入 · 输出</span><b className="text-ink font-medium">21.2K · 6.8K</b></div>
-        <div className="flex justify-between text-[11.5px] text-ink2 py-[2px]"><span>缓存命中</span><b className="text-ink font-medium">{hit}%（18.9K / 未命中 2.3K）</b></div>
-        <div className="flex justify-between text-[11.5px] text-ink2 py-[2px]"><span>上次压缩</span><b className="text-ink font-medium">{condensed ? "已发生" : "未发生"}</b></div>
-        <div className="mt-[7px] pt-[7px] border-t border-line text-[10.5px] text-ink3 leading-[1.7]">
-          按最近 5 轮增量估算，还可容纳约 {turnsLeft} 轮。<br />
-          压缩发生时前缀变化 → 缓存命中率骤降（本轮成本上升）。
-        </div>
+        {hasDetail ? (
+          <>
+            <div className="flex justify-between text-[11.5px] text-ink2 py-[2px]">
+              <span>缓存命中</span>
+              <b className="text-ink font-medium">{hit}%</b>
+            </div>
+            <div className="flex justify-between text-[11.5px] text-ink2 py-[2px]">
+              <span>上次压缩</span>
+              <b className="text-ink font-medium">{condensed ? "已发生" : "未发生"}</b>
+            </div>
+            {turnsLeft != null && (
+              <div className="mt-[7px] pt-[7px] border-t border-line text-[10.5px] text-ink3 leading-[1.7]">
+                按最近用量估算，还可容纳约 {turnsLeft} 轮。<br />
+                压缩发生时前缀变化 → 缓存命中率骤降（本轮成本上升）。
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-[10.5px] text-ink3 leading-[1.7]">
+            尚无用量记录 —— 任务首轮 LLM 调用后由后端上报真实 token 数。
+          </div>
+        )}
       </div>
     </div>
   );
@@ -59,10 +86,13 @@ export function DangerBanner({ target, env }: { target: string; env: string }) {
 
 type Mode = "Auto" | "Plan" | "Execute" | "Review";
 
-function Composer({ disabled, mode = "Auto", ringPct = 38, value, onChange, onSend, onTierChange }:
+function Composer({ disabled, mode = "Auto", ringPct = 0, usedText, totalText, hit, turnsLeft,
+                   value, onChange, onSend, onTierChange, onPickServer, onPickDatabase }:
   { disabled?: boolean; mode?: Mode; ringPct?: number;
+    usedText?: string; totalText?: string; hit?: number | null; turnsLeft?: number | null;
     value?: string; onChange?: (v: string) => void; onSend?: () => void;
-    onTierChange?: (next: Tier) => void }) {
+    onTierChange?: (next: Tier) => void;
+    onPickServer?: () => void; onPickDatabase?: () => void }) {
   // 注意：zustand v5 的选择器不能返回新对象（会触发 getSnapshot 无限循环），必须逐项取
   const tier = useShell((s) => s.tier);
   const setTier = useShell((s) => s.setTier);
@@ -97,11 +127,31 @@ function Composer({ disabled, mode = "Auto", ringPct = 38, value, onChange, onSe
           )}
         </div>
 
+        {/* 只保留有真实行为的入口；未实现的显式禁用并标注，不放"点了没反应"的按钮 */}
         <div className="flex items-center gap-[6px] px-[10px] py-[7px] border-t border-line">
-          {["添加文件", "选择服务器", "选择数据库", "添加上下文"].map((x) => (
-            <button key={x} className="h-[26px] px-[9px] rounded-[6px] border border-line text-[11.5px] text-ink2 hover:text-ink hover:bg-surface2">{x}</button>
+          {onPickServer && (
+            <button onClick={onPickServer}
+                    className="h-[26px] px-[9px] rounded-[6px] border border-line text-[11.5px] text-ink2 hover:text-ink hover:bg-surface2">
+              选择服务器
+            </button>
+          )}
+          {onPickDatabase && (
+            <button onClick={onPickDatabase}
+                    className="h-[26px] px-[9px] rounded-[6px] border border-line text-[11.5px] text-ink2 hover:text-ink hover:bg-surface2">
+              选择数据库
+            </button>
+          )}
+          {[
+            { t: "添加文件", why: "文件上下文通道未实现" },
+            { t: "添加上下文", why: "上下文挂载未实现" },
+          ].map((x) => (
+            <button key={x.t} disabled title={`${x.why}（尚未实现）`}
+                    className="h-[26px] px-[9px] rounded-[6px] border border-line text-[11.5px] text-ink3 opacity-55 cursor-not-allowed">
+              {x.t}
+            </button>
           ))}
-          <button className="h-[26px] px-[9px] rounded-[6px] border border-line text-[11.5px] text-ink2 hover:text-ink hover:bg-surface2 flex items-center gap-[5px]">
+          <button disabled title="终端通道未实现（尚未实现）"
+                  className="h-[26px] px-[9px] rounded-[6px] border border-line text-[11.5px] text-ink3 opacity-55 cursor-not-allowed flex items-center gap-[5px]">
             <Icon.terminal size={12} />使用终端
           </button>
         </div>
@@ -127,7 +177,8 @@ function Composer({ disabled, mode = "Auto", ringPct = 38, value, onChange, onSe
                 <span key={m} className={`px-[8px] h-full grid place-items-center text-[11.5px] whitespace-nowrap ${m === mode ? "bg-accent text-white font-medium" : "text-ink2"}`}>{m}</span>
               ))}
             </div>
-            <ContextRing pct={ringPct} />
+            <ContextRing pct={ringPct} used={usedText} total={totalText}
+                         hit={hit} turnsLeft={turnsLeft} />
             <button onClick={onSend}
                     className="w-[30px] h-[30px] rounded-[8px] flex items-center justify-center text-white"
                     style={{ background: disabled ? "var(--border2)" : "var(--accent)" }}>
@@ -157,6 +208,15 @@ function LiveCenter() {
   const [text, setText] = useState("");
   const runTask = useRunTask();
   const meta = TIER_META[tier];
+  // 上下文占用：来自后端真实 token 统计（contextusage 表）。
+  // 任务刚建、后端尚未上报时 usage 为 null —— 此时显示 0% 且悬浮提示如实说明
+  // "尚无用量记录"，而不是编造一个百分比。
+  const usage = useContextUsage(activeTaskId);
+  const ringPct = usage.data?.context_used_percent ?? 0;
+  const turnsLeft = usage.data?.context_used_percent != null && usage.data.context_used_percent > 0
+    ? Math.max(0, Math.floor((100 - usage.data.context_used_percent) /
+        Math.max(1, usage.data.context_used_percent) * 1))
+    : null;
 
   const onSend = () => {
     const text2 = text.trim();
@@ -169,6 +229,19 @@ function LiveCenter() {
         environment: "production", async_run: true },
       { onSuccess: (row) => setActiveTask(row.id) },   // 创建后立刻激活 → RealStream 开始轮询
     );
+  };
+
+  // 「选择服务器/数据库」：展开左侧资源树并切到对应分组（真行为，不是占位提示）
+  const setNav = useShell((s) => s.setNav);
+  const leftCollapsed = useShell((s) => s.leftCollapsed);
+  const toggleLeft = useShell((s) => s.toggleLeft);
+  const onPickServer = () => {
+    if (leftCollapsed) toggleLeft();
+    setNav("servers");
+  };
+  const onPickDatabase = () => {
+    if (leftCollapsed) toggleLeft();
+    setNav("databases");
   };
 
   // 档位切换（真 API）：升级需要确认；完全访问必须过 EscalationDialog 闸门
@@ -224,8 +297,15 @@ function LiveCenter() {
       <Composer
         disabled={runTask.isPending || !backendOnline || !activeServerId}
         mode="Auto"
+        ringPct={ringPct}
+        usedText={fmtTokens(usage.data?.context_used_tokens)}
+        totalText={usage.data?.model_context_limit ? fmtTokens(usage.data.model_context_limit) : undefined}
+        hit={usage.data?.cache_hit_ratio != null ? Math.round(usage.data.cache_hit_ratio) : null}
+        turnsLeft={turnsLeft}
         value={text} onChange={setText} onSend={onSend}
         onTierChange={onTierChange}
+        onPickServer={onPickServer}
+        onPickDatabase={onPickDatabase}
       />
       <div className="flex items-center gap-[6px] mt-[7px] text-[11px] text-ink3">
         <span className="px-[6px] py-[1px] rounded border border-line font-medium" style={{ color: meta.color }}>{meta.label}</span>

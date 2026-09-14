@@ -110,9 +110,19 @@ export function Term({ children, tone }: { children: ReactNode; tone?: "fail" })
   return <div className="term" style={tone === "fail" ? { borderColor: "var(--err)" } : undefined}>{children}</div>;
 }
 
+/** 审批卡的动作回调。**全部可选** —— 未提供的按钮不渲染，避免出现"点了没反应"的装饰按钮。 */
+export interface ApprovalCardActions {
+  onApprove?: () => void;
+  onReject?: () => void;
+  onViewCommand?: () => void;
+  onModify?: () => void;
+  /** 按钮禁用态（请求进行中） */
+  busy?: boolean;
+}
+
 /** 审批卡片（§5.7：必须给"拒绝"与"修改方案"，不能只放一个执行按钮） */
 export function ApprovalCard({
-  operation, target, targetId, cause, riskLevel, command, impact, rollback,
+  operation, target, targetId, cause, riskLevel, command, impact, rollback, actions,
 }: {
   operation: string;
   target: string;
@@ -122,7 +132,10 @@ export function ApprovalCard({
   command: string;
   impact: string;
   rollback: string;
+  actions?: ApprovalCardActions;
 }) {
+  const a = actions ?? {};
+  const busy = a.busy ?? false;
   return (
     <div className="approve">
       <h4><Icon.alert size={14} />需要你的批准</h4>
@@ -135,12 +148,15 @@ export function ApprovalCard({
         <dt>预计影响</dt><dd>{impact}</dd>
         <dt>回滚方案</dt><dd>{rollback}</dd>
       </dl>
-      <div className="acts">
-        <button className="b">查看命令</button>
-        <button className="b go"><Icon.check size={12} />批准执行</button>
-        <button className="b no">拒绝</button>
-        <button className="b warn">修改方案</button>
-      </div>
+      {/* 只渲染有回调的按钮：宁可少一个按钮，也不放点了没反应的装饰品 */}
+      {(a.onViewCommand || a.onApprove || a.onReject || a.onModify) && (
+        <div className="acts">
+          {a.onViewCommand && <button className="b" onClick={a.onViewCommand} disabled={busy}>查看命令</button>}
+          {a.onApprove && <button className="b go" onClick={a.onApprove} disabled={busy}><Icon.check size={12} />批准执行</button>}
+          {a.onReject && <button className="b no" onClick={a.onReject} disabled={busy}>拒绝</button>}
+          {a.onModify && <button className="b warn" onClick={a.onModify} disabled={busy}>修改方案</button>}
+        </div>
+      )}
     </div>
   );
 }

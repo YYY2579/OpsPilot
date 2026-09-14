@@ -70,6 +70,35 @@ def normalize_env_prefix(server_id: str) -> str:
     return server_id.upper().replace("-", "_").replace(".", "_")
 
 
+#: server_id 别名 → 真正的 credential_ref。
+#:
+#: **为什么需要它**：Agent 的 Action 里只有 `server_id`（架构约束：schema 不带
+#: 主机/账号/口令），而它拿到的是 serverconnection 的**主键**（如 `4d6cc8bd599d`）。
+#: 但环境变量是按 `credential_ref`（如 `JZZ_18`）配置的，于是工具层会去查
+#: `OPSPILOT_4D6CC8BD599D_HOST` —— 必然找不到，报 `SSH missing`。
+#: **真实踩过**：/api/servers/{id}/health 一直是通的（它先 resolve_server 取
+#: credential_ref 再解析），唯独 Agent 调用工具时全挂，看起来像"工具坏了"。
+#:
+#: 由服务启动时从 serverconnection 表填充（见 app._load_credential_aliases）。
+_ALIASES: dict[str, str] = {}
+
+
+def set_credential_aliases(mapping: dict[str, str]) -> None:
+    """整体替换别名表（启动时加载；key 会被规范化成小写）。"""
+    _ALIASES.clear()
+    for k, v in mapping.items():
+        if k and v:
+            _ALIASES[str(k).lower()] = str(v)
+
+
+def clear_credential_aliases() -> None:
+    _ALIASES.clear()
+
+
+def credential_aliases() -> dict[str, str]:
+    return dict(_ALIASES)
+
+
 def mask(text: str, secrets: tuple[str, ...] | list[str]) -> str:
     """把文本中的敏感串替换为 <secret-hidden>（与 SecretRegistry 行为一致）。"""
     out = text
@@ -97,7 +126,8 @@ class CredentialResolver:
         self._env = os.environ if environ is None else environ
         self._on_resolve = on_resolve
 
-    def resolve(self, server_id: str) -> SshCredential:
+    def _lookup(self, server_id: str) -> SshCredential:
+        """按某个标识实际查环境变量（调用方已决定用哪个标识）。"""
         prefix = "OPSPILOT_" + normalize_env_prefix(server_id)
         host = self._env.get(f"{prefix}_HOST")
         if not host:
@@ -120,7 +150,7 @@ class CredentialResolver:
             port = int(self._env.get(f"{prefix}_PORT") or "22")
         except ValueError as exc:  # pragma: no cover - 防御式
             raise CredentialError("incomplete", f"{prefix}_PORT 不是整数") from exc
-        credential = SshCredential(
+        return SshCredential(
             server_id=server_id,
             host=host,
             port=port,
@@ -128,6 +158,20 @@ class CredentialResolver:
             password=password,
             key_path=key_path,
         )
+
+    def resolve(self, server_id: str) -> SshCredential:
+        """解析凭据：先按原样查，查不到再走别名表（主键/名称 → credential_ref）。"""
+        try:
+            credential = self._lookup(server_id)
+        except CredentialError as first:
+            alias = _ALIASES.get(str(server_id).lower())
+            if not alias or alias.lower() == str(server_id).lower():
+                raise
+            try:
+                credential = self._lookup(alias)
+            except CredentialError:
+                # 别名单也找不到时，报**最初**那个标识，避免日志里冒出陌生的 ref
+                raise first from None
         if self._on_resolve is not None:
             self._on_resolve(credential.redacted())
         return credential

@@ -4,6 +4,9 @@ import {
 } from "./cards";
 import { Icon } from "../shell/icons";
 
+/** 设计态（?state=NN）专用：仅还原版式，不产生任何副作用。 */
+const noop = () => {};
+
 function ToolBodies({ body }: { body: NonNullable<Extract<Block, { kind: "tool" }>["body"]> }) {
   if (body === "ps_output") {
     return (
@@ -108,6 +111,9 @@ function BlockView({ block }: { block: Block }) {
           command="docker restart opspilot-backend"
           impact="服务中断 5～15 秒"
           rollback="重新启动原容器；失败则回滚上一镜像 tag"
+          // 设计态仅还原版式（效果图-05），按钮为 no-op；
+          // 真实审批交互在 RealStream（实况路径）由 useApprove/useReject 提供。
+          actions={{ onViewCommand: noop, onApprove: noop, onReject: noop, onModify: noop }}
         />
       );
 

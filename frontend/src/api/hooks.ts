@@ -129,6 +129,31 @@ export { api };
  * 仅在选定服务器且后端在线时轮询；`serverId` 为空即不发请求（面板显示待选）。
  * 30s 轮询——巡检面板不需要秒级，避免对靶机造成无谓 SSH 压力。
  */
+/**
+ * 上下文占用（ContextRing 的真实数据源）。
+ *
+ * 任务刚创建时后端还没有用量记录（端点返回 404），这是**真实状态**不是错误 ——
+ * 返回 null 让 UI 显示"等待首次上报"，绝不编造百分比。
+ */
+export function useContextUsage(taskId: string | null) {
+  const online = useShell((s) => s.backendOnline);
+  const state = useTaskState(taskId).data?.state ?? "";
+  return useQuery({
+    queryKey: ["context-usage", taskId, state],
+    queryFn: async () => {
+      try {
+        return await api.getContextUsage(taskId!);
+      } catch (e) {
+        if (e instanceof api.ApiError && e.status === 404) return null;
+        throw e;
+      }
+    },
+    enabled: online && !!taskId,
+    refetchInterval: (query) =>
+      query.state.data?.context_used_percent != null ? 10_000 : 5000,
+  });
+}
+
 export function useServerHealth(serverId: string | null) {
   const online = useShell((s) => s.backendOnline);
   return useQuery({

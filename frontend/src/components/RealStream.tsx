@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 
 import { useTaskEvents, useTaskState, useApprovals, useApprove, useReject } from "../api/hooks";
 import { ApprovalCard, KV, Term, ToolCard, ToolBody } from "./cards";
-import { Icon } from "../shell/icons";
 import { useShell } from "../state/shell";
 
 function stateBadge(state: string) {
@@ -95,15 +94,12 @@ export default function RealStream({ taskId }: { taskId: string }) {
           command="—（见工具调用明细）"
           impact={approval.impact}
           rollback={approval.rollback_plan}
+          actions={{
+            onApprove: () => approve.mutate(approval.id),
+            onReject: () => reject.mutate({ id: approval.id, reason: "用户拒绝" }),
+            busy: approve.isPending || reject.isPending,
+          }}
         />
-      )}
-      {approval && (
-        <div className="acts">
-          <button className="b go" onClick={() => approve.mutate(approval.id)}
-                  disabled={approve.isPending}><Icon.check size={12} />批准执行</button>
-          <button className="b no" onClick={() => reject.mutate({ id: approval.id, reason: "用户拒绝" })}
-                  disabled={reject.isPending}>拒绝</button>
-        </div>
       )}
 
       <div ref={bottomRef} />
