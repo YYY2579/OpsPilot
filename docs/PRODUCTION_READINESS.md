@@ -1,8 +1,9 @@
 # OpsPilot 生产级能力盘点
 
 > 更新时间：2026-09-14
-> 盘点方式：静态代码审计 + 离线自检脚本，非文档自述
+> 盘点方式：静态代码审计 + 离线自检脚本 + **真实靶机端到端验证**（156.224.28.147），非文档自述
 > 自检命令：`python backend/scripts/check_capabilities.py`
+> 真机验证：`PYTHONPATH= python -m pytest tests/` + 浏览器实测（见第四节）
 
 ---
 
@@ -115,7 +116,7 @@ Prometheus + Alertmanager **真实 HTTP 接入**：
 | Python | 3.13.12（隔离环境 `envs/opspilot`） | `python -V` |
 | openhands-sdk | **1.47.0** | `pip show openhands-sdk` |
 | openhands-tools | **1.47.0**（必需，见下） | `pip show openhands-tools` |
-| 单元测试 | **178 passed / 0 failed**（9.41s） | `PYTHONPATH= python -m pytest tests/ -p no:warnings` |
+| 单元测试 | **193 passed / 0 failed**（9.34s） | `PYTHONPATH= python -m pytest tests/ -p no:warnings` |
 | 能力自检 | 已实现 20 / 部分 1 / 缺失 0，**无阻塞项** | `python scripts/check_capabilities.py` |
 
 ### 4.2 靶机环境（真实部署，非模拟）
@@ -174,16 +175,58 @@ Agent 自主调用 3 个只读工具采集的真实数据（**与手工 SSH 逐�
 | 修法 | 改用 `openhands.tools.preset.default.get_default_tools()`（同时注册实现） |
 | 复核 | SDK 实际加载 **26 个工具**，与 `register_all.py` 声明逐一比对一致 |
 
+### 4.6 第二轮真机验证暴露并修复的 4 个真 bug（2026-09-14，提交 `b73040c`）
+
+第二轮跑真机时前端接上真实数据，才把下面这些"平时看不出来"的问题逼出来。
+全部有复现路径 + 修复 + 回归测试。
+
+| # | Bug | 现象（真实观测） | 根因 | 修法 | 回归测试 |
+|---|---|---|---|---|---|
+| 1 | **工具执行行永不收口** | 6 条 `toolexecution` **全部停在 `running`**，任务已 `COMPLETED` | `action` 写入 `status=running` 后，**没有任何代码**在收到 observation 时改终态 | `observation→success / tool_error→error / reject→rejected`，按 FIFO 配对；补真实 `duration_ms`；会话结束/cancel/异常时收口残留 | `tests/test_tool_lifecycle.py`（8 例） |
+| 2 | **只读工具被误判 L4 高危** | 巡检任务凭空卡在 `WAITING_APPROVAL`，审批单写 `list_alerts（limit=50）` 风险 L4 | `TOOL_LEVELS` 漏登记 `list_alerts`/`inspect_alert`/`query_metrics`/`rollout_status` → `level_of` 落到未知默认 **L4** | 补齐等级表；新增 `audit_level_table()` 自检 + 启动告警，把"清单与等级表漂移"变成显式失败 | `test_no_declared_tool_misses_a_risk_level` 等 3 例 |
+| 3 | **健康端点只认主键 → 别名 404** | 前端用 `hk-ubuntu` 调 `/api/servers/hk-ubuntu/health` 返回 `{"detail":"server not found"}` | 路由只按随机主键 `4d6cc8bd599d` 查 | 新增 `db.resolve_server()`，支持 主键 id / credential_ref / name 三种写法 | `test_server_lookup_accepts_logical_alias` |
+| 4 | **重复注册产生重复行** | 同一靶机在 `serverconnection` 里 2 行 | `create_server` 直接 insert，无去重 | 新增 `db.upsert_server()`，按 `credential_ref` 去重（保留原 id、删旧重复行） | `test_server_reregistration_dedupes_by_credential_ref` |
+
+另修两处（同一轮）：
+- **健康端点身份字段被覆盖**：采集结果自带 `server_id`（= credential_ref），字典解包顺序导致接口算出的行主键被冲掉 → 身份字段最后落定。
+- **进程重启后的孤儿记录**：`agenttask` 遗留 `running`、`toolexecution` 遗留 `running` → 启动时对账改为如实的 `interrupted` / `unknown`，并附原因，不再假装在跑。
+- **前端不会自动选中服务器**：真实数据到位后概览面板停留在"请选中一台服务器"空提示，看起来像没接上 → 自动选中第一台。
+
+### 4.7 前端接真实数据后的浏览器实测（0 控制台错误）
+
+用无头 Chromium 打开 `http://127.0.0.1:5199`，**控制台错误 0 条**，右侧概览面板渲染的全是真实值：
+
+| 面板字段 | 实测显示 | 与 SSH 基线对账 |
+|---|---|---|
+| 服务器 | 在线 · 生产靶机-jzz18 | ✓ 真实 DB 行 |
+| OS | Ubuntu 24.04.1 LTS | ✓ |
+| CPU | 2.5% | ✓ 实时 |
+| 内存 | 38.5%（3.82 GB） | ✓ 手工 37.8% |
+| 磁盘 | 16% | ✓ 手工 16% |
+| 系统负载 | 0.27 | ✓ 同量级 |
+| 服务状态 | Nginx/Docker/MySQL/SSH/k3s **正常**，Redis **未运行** | ✓ 手工 `redis=inactive` |
+| 异常项 | `service:redis` · 服务状态 inactive | ✓ 如实 |
+| 运行时间 | up 4 days, 21 hours, 2 minutes | ✓ |
+| 采集耗时 | 5142 ms | ✓ 真实计时 |
+
+截图留档：`ui_live_final.png`（仓库根，已 gitignore）。
+
+> **注意**：上表中"Redis 未运行"是**如实呈现**，不是缺陷 —— 靶机上 redis 确实没起。
+> 这正好反证前端不再是"永远显示一片绿色"的演示件。
+
 ---
 
 ## 五、剩余未完成事项（如实标注）
 
 | # | 项 | 影响 | 状态 |
 |---|---|---|---|
-| 1 | 前端 3 处 mock 未替换（`Sidebar` 假资源树 / `Stream` 假对话流 / `App` currentStateId） | 前端 UI 仍显示演示数据 | **未实现** |
-| 2 | 桌面壳 `API_BASE=""` 且不含 Python 后端 | Tauri 安装包独立运行不可用，需 sidecar | **未实现** |
-| 3 | 服务部署/发布 | `run_change_script` 通道就绪，但**部署脚本需你提供**（不臆测部署逻辑） | 待接入信息 |
-| 4 | 待审批会话进程重启后不可恢复 | 会话对象在进程内存；需接 agent-server 持久化 | 已知限制 |
+| 1 | 桌面壳 `API_BASE=""` 且不含 Python 后端 | Tauri 安装包独立运行不可用，需 sidecar（PyInstaller 打包后端 + `externalBin` + 固定端口） | **未实现** |
+| 2 | 服务部署/发布 | `run_change_script` 通道就绪，但**部署脚本需你提供**（不臆测部署逻辑） | 待接入信息 |
+| 3 | 待审批会话进程重启后不可恢复 | 会话对象在进程内存；需接 agent-server 持久化。**重启后任务会被如实标记为 `interrupted`**（不再假装在跑） | 已知限制 |
+
+> 已解决（原第 1 项）：前端 3 处 mock 已全部替换 —— `Sidebar` 走真实 API、
+> `OverviewPanel` 走真实 `/health`、`currentStateId` 迁出 mock 至 `lib/viewState.ts`。
+> 设计态预览（`?state=NN`）仍保留 mock，属预期的演示入口，不影响实况模式。
 
 > 以上均为**如实标注**，未用假数据伪装成已完成。
 
