@@ -13,6 +13,8 @@
     "windows": [
       {
         "title": "OpsPilot",
+        "label": "main",
+        "url": "http://127.0.0.1:8791",
         "width": 1440,
         "height": 920,
         "minWidth": 960,
