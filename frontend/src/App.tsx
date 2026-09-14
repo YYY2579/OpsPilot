@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useShell } from "./state/shell";
-import { currentStateId } from "./mock/data";
+import { currentStateId, isLiveMode } from "./lib/viewState";
 import MenuBar from "./shell/MenuBar";
 import TopBar from "./shell/TopBar";
 import Sidebar from "./shell/Sidebar";
@@ -34,7 +34,8 @@ export default function App() {
   const stateParam = new URLSearchParams(window.location.search).get("state");
   const stateId = currentStateId();
   const meta = STATE_META[stateId] ?? STATE_META["01"];
-  const live = backendOnline && !stateParam;     // 无 ?state= 参数 → 实况模式
+  const live = isLiveMode(backendOnline);        // 无 ?state= 且后端在线 → 实况模式（真数据）
+  void stateParam;
 
   // 探测后端（M6-1）：在线则走真数据，离线则回退 mock（设计状态仍可看）
   useEffect(() => {

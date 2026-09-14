@@ -52,3 +52,31 @@ export function projectSdkStatus(sdk: string): string {
     default: return "INSPECT";
   }
 }
+
+/** 主机健康快照（GET /api/servers/:id/health 的真实返回） */
+export interface HealthSnapshot {
+  server_id: string;
+  name?: string | null;
+  host?: string | null;
+  environment?: string | null;
+  ok: boolean;
+  stage?: string;
+  kind?: string;
+  message?: string;
+  latency_ms?: number;
+  uptime_text?: string;
+  os?: { name: string };
+  cpu?: { percent: number; load_avg: number[]; cores: number; status: string };
+  memory?: { percent: number; used_gb: number; total_gb: number; status: string };
+  disk?: { used_percent: number; status: string };
+  top_process?: { pid: number; name: string; cpu: number }[];
+  services?: Record<string, string>;
+  anomalies?: { item?: string; level?: string; hint?: string }[];
+}
+
+/** 后端 status 字段 → 面板三态色（未知即 unknown，不假设"正常"） */
+export function healthTone(status: string | undefined): "ok" | "warn" | "err" {
+  if (status === "ok" || status === "active") return "ok";
+  if (status === "warning" || status === "degraded") return "warn";
+  return "err";
+}

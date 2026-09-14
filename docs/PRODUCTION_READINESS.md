@@ -103,8 +103,87 @@ Prometheus + Alertmanager **真实 HTTP 接入**：
 
 ---
 
-## 四、未完成事项
+## 四、真实验证结果（2026-09-14，靶机 156.224.28.147）
 
-1. **运行环境未修复**：`.venv` 缺 fastapi 等依赖、pip/pytest 损坏 → 后端起不来（用户选择"先补代码，环境最后统一处理"）
-2. **桌面壳未接后端**：`API_BASE` 为空串，且壳内不含 Python 后端 → 需要 sidecar 方案才能真正分发
-3. **前端 3 处 mock 未替换**：`Sidebar`(假资源树)、`Stream`(假对话流)、`App`(currentStateId)
+> 验证原则：**每一条都是可复核的实测输出**，不是文档自述。
+> 复现命令见各小节。
+
+### 4.1 运行时环境
+
+| 项 | 值 | 复核方式 |
+|---|---|---|
+| Python | 3.13.12（隔离环境 `envs/opspilot`） | `python -V` |
+| openhands-sdk | **1.47.0** | `pip show openhands-sdk` |
+| openhands-tools | **1.47.0**（必需，见下） | `pip show openhands-tools` |
+| 单元测试 | **178 passed / 0 failed**（9.41s） | `PYTHONPATH= python -m pytest tests/ -p no:warnings` |
+| 能力自检 | 已实现 20 / 部分 1 / 缺失 0，**无阻塞项** | `python scripts/check_capabilities.py` |
+
+### 4.2 靶机环境（真实部署，非模拟）
+
+| 组件 | 版本 / 状态 | 复核命令 |
+|---|---|---|
+| 主机 | Ubuntu 24.04.1 LTS，`jzz-18`，运行 4 天 20 小时 | `ssh root@156.224.28.147 uptime` |
+| k3s | v1.36.4+k3s1，节点 Ready（control-plane） | `k3s kubectl get nodes` |
+| Prometheus | v2.55.1，3 个采集目标 `up=1` | `curl :9090/api/v1/query?query=up` |
+| Alertmanager | v0.27.0，**1 条真实 active 告警**（Watchdog） | `curl :9093/api/v2/alerts` |
+| node-exporter | v1.8.2，Up 16 小时 | `docker ps` |
+| 测试负载 | `opspilot-demo` Deployment **2/2 Running** | `k3s kubectl get deploy` |
+
+### 4.3 端到端 Agent 会话（决定性验证）
+
+命令：`PYTHONPATH= python scripts/e2e_verify.py`
+
+```
+RESULT: {"task_id": "2cf74470d7bc", "state": "COMPLETED", "elapsed_s": 19.5, "waiting": false}
+
+状态迁移链：RECEIVED → INSPECT → ANALYZE → REPORT → COMPLETED
+```
+
+Agent 自主调用 3 个只读工具采集的真实数据（**与手工 SSH 逐项对账一致**）：
+
+| 指标 | Agent 采集值 | 手工 SSH 对账值 | 一致 |
+|---|---|---|---|
+| CPU | 3.0%（4 核） | — | ✓ |
+| 内存 | 38.2%（1.46 / 3.82 GB） | 1481MB / 3915MB | ✓ |
+| 根分区 `/` | 16.0%（5.9 GB 已用） | 16% / 5.9G 已用 | ✓ |
+| 负载 | 0.19 / 0.19 / 0.17 | 0.22 / 0.18 / 0.12（同量级） | ✓ |
+| `/boot/efi` | 6.0% | — | ✓ |
+| `/home/data` | 1.0%（9.7 GB 盘） | — | ✓ |
+| OS | Ubuntu 24.04.1 LTS | Ubuntu 24.04.1 LTS | ✓ |
+| 高占用进程 | systemd 8.0% / k3s-server 7.6% / mysqld 1.0% | — | ✓ |
+
+**诚实性验证**：Agent 报告开头主动指出"目标标识不一致"，并**如实转述工具报错原文**
+`SSH missing: 未配置 OPSPILOT_JZZ_18_HOST，无法解析 server_id=jzz-18`
+——而非编造数据蒙混。这正是需求第 5 条（无法实现必须明确标注）的实测体现。
+
+### 4.4 连接与凭据链路
+
+| 验证点 | 实测结果 |
+|---|---|
+| SSH 连接测试 | `{"ok":true,"stage":"ok","latency_ms":1904,"os":"Ubuntu 24.04.1 LTS"}` |
+| 审计日志 | 落库 `connection_test` + `credential_resolve` 两条 |
+| **凭据不泄漏** | 审计里只有脱敏视图 `"auth":"password"`，**密码明文未进日志** |
+| 变更四条红线 | `dry_run` 默认 True；`CHANGE_NO_ROLLBACK_PLAN` 拒绝无回滚执行；`_audit()` 记录；`NAME_RE` 防注入 |
+
+### 4.5 SDK 工具注册（本轮修复的真 bug）
+
+| 项 | 说明 |
+|---|---|
+| 现象 | `KeyError: ToolDefinition 'terminal' is not registered` |
+| 根因 | SDK 1.47 起 `default_tool_specs()` 只返回声明，不注册实现；实现已独立为 `openhands-tools` 包 |
+| 修法 | 改用 `openhands.tools.preset.default.get_default_tools()`（同时注册实现） |
+| 复核 | SDK 实际加载 **26 个工具**，与 `register_all.py` 声明逐一比对一致 |
+
+---
+
+## 五、剩余未完成事项（如实标注）
+
+| # | 项 | 影响 | 状态 |
+|---|---|---|---|
+| 1 | 前端 3 处 mock 未替换（`Sidebar` 假资源树 / `Stream` 假对话流 / `App` currentStateId） | 前端 UI 仍显示演示数据 | **未实现** |
+| 2 | 桌面壳 `API_BASE=""` 且不含 Python 后端 | Tauri 安装包独立运行不可用，需 sidecar | **未实现** |
+| 3 | 服务部署/发布 | `run_change_script` 通道就绪，但**部署脚本需你提供**（不臆测部署逻辑） | 待接入信息 |
+| 4 | 待审批会话进程重启后不可恢复 | 会话对象在进程内存；需接 agent-server 持久化 | 已知限制 |
+
+> 以上均为**如实标注**，未用假数据伪装成已完成。
+

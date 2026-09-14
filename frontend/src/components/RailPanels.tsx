@@ -1,4 +1,7 @@
 import { Icon } from "../shell/icons";
+import { useServerHealth } from "../api/hooks";
+import { useShell } from "../state/shell";
+import { healthTone, type HealthSnapshot } from "../api/types";
 
 function Sec({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -13,9 +16,9 @@ function Row({ k, v, mono }: { k: React.ReactNode; v: React.ReactNode; mono?: bo
   return <div className="row">{k}<span className={`r ${mono ? "font-mono" : ""}`} style={{ color: "var(--text2)" }}>{v}</span></div>;
 }
 
-function StatusRow({ name, state }: { name: string; state: "ok" | "warn" | "err" }) {
+function StatusRow({ name, state, text }: { name: string; state: "ok" | "warn" | "err"; text?: string }) {
   const map = { ok: { text: "正常", cls: "s-ok" }, warn: { text: "警告", cls: "s-warn" }, err: { text: "异常", cls: "s-err" } }[state];
-  return <div className="row"><span>{name}</span><span className={`r ${map.cls} flex items-center gap-[5px]`}><i className="dot" />{map.text}</span></div>;
+  return <div className="row"><span>{name}</span><span className={`r ${map.cls} flex items-center gap-[5px]`}><i className="dot" />{text ?? map.text}</span></div>;
 }
 
 function Metric({ label, value, pct, tone }: { label: string; value: string; pct: number; tone: "ok" | "warn" | "err" }) {
@@ -29,46 +32,153 @@ function Metric({ label, value, pct, tone }: { label: string; value: string; pct
   );
 }
 
+/** 服务名 → 中文展示名（仅用于显示，取值仍是后端原样） */
+const SERVICE_LABEL: Record<string, string> = {
+  nginx: "Nginx", docker: "Docker", mysql: "MySQL", redis: "Redis",
+  sshd: "SSH", k3s: "k3s", node_exporter: "node-exporter",
+};
+/** systemd 状态 → 面板三态（空/unknown 一律按异常显示，不假装正常） */
+function serviceTone(v: string): "ok" | "warn" | "err" {
+  if (v === "active") return "ok";
+  if (v === "activating" || v === "reloading") return "warn";
+  return "err";
+}
+function serviceText(v: string): string {
+  if (v === "active") return "正常";
+  if (v === "inactive") return "未运行";
+  if (v === "failed") return "失败";
+  if (v === "unknown" || !v) return "未知";
+  return v;
+}
+
+/** 离线（纯设计态预览）时的占位快照。**不是**"演示数据"，仅用于无后端时保持版式。 */
+const OFFLINE_SNAPSHOT: HealthSnapshot = {
+  server_id: "", ok: false, stage: "offline",
+  message: "后端未连接，无法采集真实指标",
+};
+
+function OfflineNotice({ text }: { text: string }) {
+  return (
+    <div className="px-[10px] py-[8px] text-[11px] leading-[1.5] rounded-[6px]"
+         style={{ background: "var(--bg2)", color: "var(--text3)" }}>
+      {text}
+    </div>
+  );
+}
+
 export function OverviewPanel() {
+  const activeServerId = useShell((s) => s.activeServerId);
+  const backendOnline = useShell((s) => s.backendOnline);
+  const { data, isLoading } = useServerHealth(activeServerId || null);
+
+  // 后端在线但没有选中服务器 → 提示去选，而不是显示假指标
+  if (backendOnline && !activeServerId) {
+    return (
+      <div className="railin">
+        <Sec title="服务器信息">
+          <OfflineNotice text="请在左侧「服务器」中选中一台，面板将展示它的真实指标。" />
+        </Sec>
+      </div>
+    );
+  }
+
+  if (backendOnline && isLoading) {
+    return (
+      <div className="railin">
+        <Sec title="服务器信息">
+          <OfflineNotice text="正在通过 SSH 采集真实指标…" />
+        </Sec>
+      </div>
+    );
+  }
+
+  const snap: HealthSnapshot = backendOnline
+    ? (data ?? { ...OFFLINE_SNAPSHOT, message: "采集未返回数据" })
+    : OFFLINE_SNAPSHOT;
+  const failed = !snap.ok;
+
+  const cpu = snap.cpu;
+  const mem = snap.memory;
+  const disk = snap.disk;
+  const load1 = cpu?.load_avg?.[0];
+  const cores = cpu?.cores ?? 1;
+
   return (
     <div className="railin">
-      <Sec title="服务器信息" right={<span className="s-ok flex items-center gap-[5px]"><i className="dot" />在线</span>}>
+      <Sec title="服务器信息" right={
+        failed
+          ? <span className="s-err flex items-center gap-[5px]"><i className="dot" />不可用</span>
+          : <span className="s-ok flex items-center gap-[5px]"><i className="dot" />在线</span>
+      }>
         <div className="host">
           <div>
-            <div className="nm">HK-Ubuntu</div>
-            <div className="meta"><span>Ubuntu 24.04</span><span>4 vCPU</span><span>4 GB RAM</span></div>
+            <div className="nm">{snap.name || activeServerId || "未选择"}</div>
+            <div className="meta">
+              <span>{snap.os?.name ?? "—"}</span>
+              <span>{cores} vCPU</span>
+              <span>{mem ? `${mem.total_gb} GB RAM` : "—"}</span>
+            </div>
           </div>
         </div>
+        {failed && (
+          <div className="mt-[8px]">
+            <OfflineNotice text={snap.message || "采集失败"} />
+          </div>
+        )}
       </Sec>
 
-      <Sec title="资源占用">
-        <div className="metrics">
-          <Metric label="CPU" value="82%" pct={82} tone="err" />
-          <Metric label="内存" value="91%" pct={91} tone="err" />
-          <Metric label="磁盘" value="68%" pct={68} tone="warn" />
-          <Metric label="系统负载" value="4.8" pct={74} tone="warn" />
-        </div>
-      </Sec>
+      {!failed && (
+        <>
+          <Sec title="资源占用">
+            <div className="metrics">
+              <Metric label="CPU" value={cpu ? `${cpu.percent}%` : "—"}
+                      pct={cpu?.percent ?? 0} tone={healthTone(cpu?.status)} />
+              <Metric label="内存" value={mem ? `${mem.percent}%` : "—"}
+                      pct={mem?.percent ?? 0} tone={healthTone(mem?.status)} />
+              <Metric label="磁盘" value={disk ? `${disk.used_percent}%` : "—"}
+                      pct={disk?.used_percent ?? 0} tone={healthTone(disk?.status)} />
+              <Metric label="系统负载"
+                      value={load1 != null ? load1.toFixed(2) : "—"}
+                      pct={load1 != null ? Math.min(100, Math.round(load1 / cores * 100)) : 0}
+                      tone={load1 != null && load1 / cores > 1 ? "warn" : "ok"} />
+            </div>
+          </Sec>
 
-      <Sec title="服务状态">
-        <StatusRow name="Nginx" state="ok" />
-        <StatusRow name="Docker" state="ok" />
-        <StatusRow name="MySQL" state="warn" />
-        <StatusRow name="Redis" state="ok" />
-      </Sec>
+          <Sec title="服务状态">
+            {Object.keys(snap.services ?? {}).length === 0
+              ? <Row k="—" v="未采集" />
+              : Object.entries(snap.services!).map(([name, v]) => (
+                  <StatusRow key={name} name={SERVICE_LABEL[name] ?? name}
+                             state={serviceTone(v)} text={serviceText(v)} />
+                ))}
+          </Sec>
 
-      <Sec title="网络状态">
-        <StatusRow name="SSH 连接" state="ok" />
-        <StatusRow name="HTTP" state="ok" />
-        <StatusRow name="HTTPS" state="ok" />
-      </Sec>
+          {(snap.anomalies?.length ?? 0) > 0 && (
+            <Sec title="异常项">
+              {snap.anomalies!.map((a, i) => {
+                const it = a as { item?: string; level?: string; hint?: string };
+                const tone = it.level === "critical" || it.level === "crit" ? "err"
+                           : it.level === "warning" || it.level === "warn" ? "warn" : "err";
+                return (
+                  <div className="row" key={i}>
+                    <span className={`${tone === "warn" ? "s-warn" : "s-err"} shrink-0`}>
+                      {it.item ?? "异常"}
+                    </span>
+                    <span className="r" style={{ color: "var(--text2)" }}>{it.hint ?? ""}</span>
+                  </div>
+                );
+              })}
+            </Sec>
+          )}
 
-      <Sec title="快速信息">
-        <Row k="IP 地址" v="156.224.28.147" mono />
-        <Row k="操作系统" v="Ubuntu 24.04.1 LTS" />
-        <Row k="运行时间" v="3 天 12 小时" />
-        <Row k="上次登录" v="2026-09-09 11:08" />
-      </Sec>
+          <Sec title="快速信息">
+            <Row k="IP 地址" v={snap.host ?? "—"} mono />
+            <Row k="操作系统" v={snap.os?.name ?? "—"} />
+            <Row k="运行时间" v={snap.uptime_text || "—"} />
+            <Row k="采集耗时" v={snap.latency_ms != null ? `${snap.latency_ms} ms` : "—"} />
+          </Sec>
+        </>
+      )}
     </div>
   );
 }

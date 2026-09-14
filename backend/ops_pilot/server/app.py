@@ -9,6 +9,7 @@ import time
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import os
@@ -20,6 +21,7 @@ from ops_pilot.runtime.states import TaskState
 from ops_pilot.server import db
 from ops_pilot.server import audit, settings
 from ops_pilot.server.probe import test_database, test_server
+from ops_pilot.server.probe import collect_server_health as probe_health
 from ops_pilot.server.usage import normalize_usage, ring_state
 from ops_pilot.server.permission import (
     DEFAULT_BY_ENV,
@@ -30,6 +32,29 @@ from ops_pilot.server.permission import (
 
 app = FastAPI(title="OpsPilot Backend", version="0.1.0")
 store = PermissionStore()
+
+# ---------- CORS（开发模式前端独立起在 5173/5199 等端口） ----------
+# 打包后前端由本服务同源提供（见文件末尾 StaticFiles），但开发时前端跑在
+# Vite 上，属跨域。缺这一层会让浏览器静默拒绝所有 API 调用，前端只能显示
+# mock（真实踩过：页面显示 CPU 82% 的假数据，而真实值 3.0%）。
+#
+# 允许来源：默认仅本机开发端口；生产部署经反向代理同源，无需放宽。
+# 用显式白名单而非 "*"，避免凭据与内网接口在任意站点下被读取。
+_CORS_ORIGINS = [
+    o.strip() for o in os.environ.get(
+        "OPSPILOT_CORS_ORIGINS",
+        "http://127.0.0.1:5173,http://localhost:5173,"
+        "http://127.0.0.1:5199,http://localhost:5199,"
+        "http://tauri.localhost,https://tauri.localhost",
+    ).split(",") if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
@@ -420,6 +445,26 @@ def change_permission(session_id: str, body: PermissionIn):
 @app.get("/api/audit")
 def query_audit(kind: str | None = None, limit: int = 100):
     return audit.list_events(app.state.conn, kind=kind, limit=limit)
+
+
+# ---------- 主机健康快照（前端概览面板的真实数据来源） ----------
+
+@app.get("/api/servers/{server_id}/health")
+def server_health(server_id: str):
+    """真实采集目标主机健康快照（只读）。
+
+    复用 Agent 工具 `get_server_health` 的同一份纯逻辑，保证界面与 Agent
+    看到的数值一致。未注册的 server_id 返回 404，凭据缺失返回 ok=false
+    并附带 stage（credential/ssh/collect），不编造指标。
+    """
+    row = db.fetch_one(app.state.conn, "serverconnection", server_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="server not found")
+    credential_ref = row.get("credential_ref") or server_id
+    result = probe_health(credential_ref)
+    return {"server_id": server_id, "name": row.get("name"),
+            "host": row.get("host"), "environment": row.get("environment"),
+            **result}
 
 
 # ---------- 前端静态资源（打包后由后端同源提供，避免 CORS） ----------

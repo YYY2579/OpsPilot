@@ -122,3 +122,20 @@ export function useChangeTier() {
 }
 
 export { api };
+
+/**
+ * 主机健康快照：概览面板的真实数据源。
+ *
+ * 仅在选定服务器且后端在线时轮询；`serverId` 为空即不发请求（面板显示待选）。
+ * 30s 轮询——巡检面板不需要秒级，避免对靶机造成无谓 SSH 压力。
+ */
+export function useServerHealth(serverId: string | null) {
+  const online = useShell((s) => s.backendOnline);
+  return useQuery({
+    queryKey: ["server-health", serverId],
+    queryFn: () => api.getServerHealth(serverId!),
+    enabled: online && !!serverId,
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+}

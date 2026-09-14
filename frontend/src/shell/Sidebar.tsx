@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { useShell } from "../state/shell";
-import { DATABASES, NAV_COUNTS, PROJECTS, SERVERS } from "../mock/data";
+import { DATABASES, PROJECTS, SERVERS } from "../mock/data";
 import { envColor as realEnvColor, envLabel } from "../api/types";
-import { useServers } from "../api/hooks";
+import { useDatabases, useProjects, useServers } from "../api/hooks";
 import { Icon } from "./icons";
 
 function EnvTag({ env }: { env: string }) {
@@ -47,15 +48,38 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
   const { nav, setNav } = useShell();
   const collapsed = useShell((s) => s.leftCollapsed);
   const dbOpen = stateId === "08";
-  const { data: realServers } = useServers();
+  const backendOnline = useShell((s) => s.backendOnline);
   const activeServerId = useShell((s) => s.activeServerId);
   const setActiveServer = useShell((s) => s.setActiveServer);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // 真实数据源：后端在线则用真实返回值，离线（纯设计态预览）才回退 mock。
+  // 三个列表都是真实 API，不再有"只有界面没有实现"的空壳。
+  const { data: realServers } = useServers();
+  const { data: realDatabases } = useDatabases();
+  const { data: realProjects } = useProjects();
+
   const servers: { key: string; name: string; sub: string; env: string; status: string; active: boolean }[] =
     realServers
       ? realServers.map((s) => ({ key: s.id, name: s.name, sub: s.host, env: s.environment,
                                   status: s.status, active: s.id === activeServerId }))
       : SERVERS.map((s) => ({ key: s.id, name: s.name, sub: s.ip, env: s.env,
                               status: s.status, active: s.name === "HK-Ubuntu" }));
+
+  const databases: { key: string; name: string; sub: string; env: string }[] =
+    realDatabases
+      ? realDatabases.map((d) => ({ key: d.id, name: d.name, sub: `${d.host}:${d.port}`,
+                                    env: d.environment }))
+      : DATABASES.map((d) => ({ key: d.id, name: d.name,
+                                sub: d.tables ? `${d.tables} 张表` : "缓存实例", env: d.env }));
+
+  const projects: { key: string; name: string; env: string }[] =
+    realProjects
+      ? realProjects.map((p) => ({ key: p.id, name: p.name, env: p.environment }))
+      : PROJECTS.map((p) => ({ key: p.id, name: p.name, env: p.env }));
+
+  // 计数一律取真实数组长度（离线时取 mock 长度），不再写死。
+  const counts = { servers: servers.length, databases: databases.length, projects: projects.length };
 
   if (collapsed) {
     return (
@@ -99,7 +123,7 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
         <Row active={nav === "servers"} onClick={() => setNav("servers")}>
           <Icon.server size={13} className="text-ink2 shrink-0" />
           <span className="text-[12.5px] text-ink">服务器</span>
-          <span className="ml-auto text-[11px] text-ink3">{NAV_COUNTS.servers}</span>
+          <span className="ml-auto text-[11px] text-ink3">{counts.servers}</span>
         </Row>
 
         {nav === "servers" && servers.map((s) => (
@@ -119,45 +143,38 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
         <Row active={nav === "databases"} onClick={() => setNav("databases")}>
           <Icon.db size={13} className="text-ink2 shrink-0" />
           <span className="text-[12.5px] text-ink">数据库</span>
-          <span className="ml-auto text-[11px] text-ink3">{NAV_COUNTS.databases}</span>
+          <span className="ml-auto text-[11px] text-ink3">{counts.databases}</span>
         </Row>
 
         {nav === "databases" && (dbOpen ? (
           <>
-            <Row active>
-              <span className="w-[13px]" />
-              <Icon.db size={13} className="text-ink2 shrink-0" />
-              <span className="flex flex-col min-w-0 leading-[1.25]">
-                <span className="text-[12.5px] text-ink truncate">MySQL-Production</span>
-                <span className="text-[10.5px] text-ink3">192.168.1.20</span>
-              </span>
-              <EnvTag env="生产" />
-            </Row>
-            <Leaf label="Databases" caret="open" />
-            <Leaf label="ruoyi_cloud" level={2} right="42 表" active />
-            <Leaf label="opspilot" level={2} right="18 表" />
-            <Leaf label="Tables" caret="closed" right="60" />
-            <Leaf label="Views" caret="closed" right="4" />
-            <Leaf label="Procedures" caret="closed" right="2" />
-            <Leaf label="Functions" caret="closed" right="3" />
-            <Leaf label="Query Console" icon="term" />
-            {DATABASES.slice(1).map((d) => (
-              <Row key={d.id}>
-                <span className="w-[13px]" />
-                <span className="flex flex-col min-w-0 leading-[1.25]">
-                  <span className="text-[12.5px] text-ink truncate">{d.name}</span>
-                  <span className="text-[10.5px] text-ink3">{d.tables ? `${d.tables} 张表` : "缓存实例"}</span>
-                </span>
-                <EnvTag env={d.env} />
-              </Row>
+            {databases.map((d, i) => (
+              <div key={d.key}>
+                <Row active={i === 0}>
+                  <span className="w-[13px]" />
+                  <Icon.db size={13} className="text-ink2 shrink-0" />
+                  <span className="flex flex-col min-w-0 leading-[1.25]">
+                    <span className="text-[12.5px] text-ink truncate">{d.name}</span>
+                    <span className="text-[10.5px] text-ink3">{d.sub}</span>
+                  </span>
+                  <EnvTag env={d.env} />
+                </Row>
+                {i === 0 && (
+                  <>
+                    <Leaf label="Tables" caret="closed" />
+                    <Leaf label="Views" caret="closed" />
+                    <Leaf label="Query Console" icon="term" />
+                  </>
+                )}
+              </div>
             ))}
           </>
-        ) : DATABASES.map((d) => (
-          <Row key={d.id}>
+        ) : databases.map((d) => (
+          <Row key={d.key}>
             <span className="w-[13px]" />
             <span className="flex flex-col min-w-0 leading-[1.25]">
               <span className="text-[12.5px] text-ink truncate">{d.name}</span>
-              <span className="text-[10.5px] text-ink3">{d.tables ? `${d.tables} 张表` : "缓存实例"}</span>
+              <span className="text-[10.5px] text-ink3">{d.sub}</span>
             </span>
             <EnvTag env={d.env} />
           </Row>
@@ -167,11 +184,11 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
         <Row active={nav === "projects"} onClick={() => setNav("projects")}>
           <Icon.folder size={13} className="text-ink2 shrink-0" />
           <span className="text-[12.5px] text-ink">项目</span>
-          <span className="ml-auto text-[11px] text-ink3">{NAV_COUNTS.projects}</span>
+          <span className="ml-auto text-[11px] text-ink3">{counts.projects}</span>
         </Row>
 
-        {nav === "projects" && PROJECTS.map((p) => (
-          <Row key={p.id}>
+        {nav === "projects" && projects.map((p) => (
+          <Row key={p.key}>
             <span className="w-[13px]" />
             <Icon.folder size={12} className="text-ink3 shrink-0" />
             <span className="text-[12.5px] text-ink truncate">{p.name}</span>
@@ -189,14 +206,26 @@ export default function Sidebar({ stateId }: { stateId?: string }) {
         </Row>
       </nav>
 
+      {notice && (
+        <div className="shrink-0 mx-[10px] mb-[6px] px-[9px] py-[6px] rounded-[6px] text-[11px] leading-[1.4]"
+             style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
+          {notice}
+        </div>
+      )}
+
       <div className="shrink-0 border-t border-line px-[10px] py-[8px] grid grid-cols-2 gap-[6px]">
-        <button className="h-[30px] rounded-[7px] bg-accent border border-accent text-white text-[12px] font-semibold flex items-center justify-center gap-[5px]">
+        <button onClick={() => { setNav("servers"); setNotice("选择左侧任一服务器，在中间输入运维指令即可开始（Agent 会真实 SSH 采集）。"); }}
+          className="h-[30px] rounded-[7px] bg-accent border border-accent text-white text-[12px] font-semibold flex items-center justify-center gap-[5px]">
           <Icon.plus size={12} />新建连接
         </button>
-        <button className="h-[30px] rounded-[7px] border border-line bg-surface2 text-[12px] text-ink2 hover:text-ink flex items-center justify-center gap-[5px]">
+        <button onClick={() => { setNav("projects"); setNotice("在中间输入「新建项目」并给出名称与路径，Agent 会通过 API 落库。"); }}
+          className="h-[30px] rounded-[7px] border border-line bg-surface2 text-[12px] text-ink2 hover:text-ink flex items-center justify-center gap-[5px]">
           <Icon.plus size={12} />新建项目
         </button>
-        <button className="col-span-2 h-[30px] rounded-[7px] border border-line bg-surface2 text-[12px] text-ink2 hover:text-ink flex items-center justify-center gap-[5px]">
+        <button onClick={() => { setNav("databases"); setNotice(backendOnline
+            ? "已连接后端：数据库列表来自 /api/connections/databases 真实返回值。"
+            : "后端未连接：请先启动 backend（uvicorn ops_pilot.server.app:app --port 8700）并用 VITE_API_BASE 指向它。"); }}
+          className="col-span-2 h-[30px] rounded-[7px] border border-line bg-surface2 text-[12px] text-ink2 hover:text-ink flex items-center justify-center gap-[5px]">
           <Icon.gear size={12} />连接管理 · 凭据管理
         </button>
       </div>

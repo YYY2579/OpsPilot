@@ -81,3 +81,7 @@ export const changePermission = (
 // ---------- 审计 ----------
 export const getAudit = (kind?: string, limit = 100) =>
   request<Record<string, unknown>[]>(`/api/audit?limit=${limit}${kind ? `&kind=${kind}` : ""}`);
+
+// ---------- 主机健康（真实采集，非 mock） ----------
+export const getServerHealth = (serverId: string) =>
+  request<import("./types").HealthSnapshot>(`/api/servers/${serverId}/health`);
